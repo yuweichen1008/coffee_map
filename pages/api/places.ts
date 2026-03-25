@@ -18,9 +18,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     console.debug('Supabase not configured; proceeding without cache')
   }
 
-  const { query, lat, lng } = req.query as { query?: string, lat?: string, lng?: string };
-  const key = process.env.GOOGLE_MAPS_API_KEY;
-  if (!key) return res.status(500).json({ error: 'Missing server API key' });
+  const { query, lat, lng, radius: radiusQ, maxPages: maxPagesQ } = req.query as {
+    query?: string
+    lat?: string
+    lng?: string
+    radius?: string
+    maxPages?: string
+  }
+  const key =
+    process.env.GOOGLE_MAPS_API_KEY ||
+    process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+  if (!key) return res.status(500).json({ error: 'Missing server API key' })
   
   if (!lat || !lng) {
     return res.status(400).json({ error: 'lat and lng are required' });
@@ -29,10 +37,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const parsedLat = parseFloat(lat);
   const parsedLng = parseFloat(lng);
 
-  console.debug('Places API called with', { query, parsedLat, parsedLng })
+  const keyword = (query as string) || 'cafe'
+  let radiusMeters = parseInt(String(radiusQ || ''), 10)
+  if (!Number.isFinite(radiusMeters) || radiusMeters < 1) radiusMeters = 2000
+  radiusMeters = Math.min(50000, Math.max(200, radiusMeters))
+
+  console.debug('Places API called with', {
+    keyword,
+    parsedLat,
+    parsedLng,
+    radiusMeters,
+  })
 
   // try cache lookup in Supabase using simple bounding-box approximation
-  const radiusMeters = 2000
   if (supabase) {
     try {
       const sevenDaysAgo = new Date();
@@ -53,6 +70,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const { data: cachedPlaces, error } = await supabase
         .from('places')
         .select('*')
+        .eq('category', keyword)
         .gte('lat', latMin)
         .lte('lat', latMax)
         .gte('lng', lngMin)
@@ -70,28 +88,60 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
   }
 
-  const location = `${lat},${lng}`;
-  const radius = radiusMeters;
-  const type = query || 'cafe';
-  const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${location}&radius=${radius}&keyword=${encodeURIComponent(type)}&key=${key}`;
+  const location = `${lat},${lng}`
+
+  let maxPages = parseInt(String(maxPagesQ || ''), 10)
+  if (!Number.isFinite(maxPages) || maxPages < 1) maxPages = 3
+  maxPages = Math.min(3, Math.max(1, maxPages))
+
+  const delay = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 
   try {
-    const r = await fetch(url);
-    const json = await r.json();
-    console.debug('Google Places returned', json?.results?.length || 0, 'results')
+    const aggregated: any[] = []
+    let url: string | null = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${encodeURIComponent(
+      location,
+    )}&radius=${radiusMeters}&keyword=${encodeURIComponent(keyword)}&key=${key}`
 
-    if (supabase && json.results && json.results.length > 0) {
-      const placesToInsert = json.results.map((place: any) => ({
+    for (let pageIndex = 0; url && pageIndex < maxPages; ) {
+      const r = await fetch(url)
+      const json = await r.json()
+
+      if (json.status === 'INVALID_REQUEST' && url.includes('pagetoken')) {
+        await delay(2500)
+        continue
+      }
+      if (json.status !== 'OK' && json.status !== 'ZERO_RESULTS') {
+        if (pageIndex === 0) {
+          return res.status(502).json({
+            error: json.error_message || json.status,
+          })
+        }
+        console.warn('Places NearbySearch stopped', json.status, json.error_message)
+        break
+      }
+      if (json.results?.length) aggregated.push(...json.results)
+
+      if (!json.next_page_token) break
+      await delay(2100)
+      url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?pagetoken=${encodeURIComponent(
+        json.next_page_token,
+      )}&key=${key}`
+      pageIndex += 1
+    }
+
+    console.debug('Google Places returned', aggregated.length, 'results (paginated)')
+
+    if (supabase && aggregated.length > 0) {
+      const placesToInsert = aggregated.map((place: any) => ({
         name: place.name,
         address: place.vicinity,
         lat: place.geometry?.location?.lat || null,
         lng: place.geometry?.location?.lng || null,
         google_place_id: place.place_id,
-        category: type,
+        category: keyword,
         source: 'google',
-      }));
+      }))
 
-      // Upsert using google_place_id as unique key
       try {
         for (const p of placesToInsert) {
           if (!p.google_place_id) continue
@@ -103,9 +153,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
 
-    return res.status(200).json({ ...json, source: 'google' });
+    return res.status(200).json({
+      results: aggregated,
+      status: 'OK',
+      source: 'google',
+    })
   } catch (error) {
-    console.error('Google Maps API fetch failed:', error);
-    return res.status(500).json({ error: 'Failed to fetch data from Google Maps' });
+    console.error('Google Maps API fetch failed:', error)
+    return res.status(500).json({ error: 'Failed to fetch data from Google Maps' })
   }
 }
