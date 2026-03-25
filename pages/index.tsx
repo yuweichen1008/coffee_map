@@ -38,8 +38,9 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // Avoid injecting the Google Maps script multiple times (React StrictMode or re-mounts)
+    // Avoid injecting the Google Maps script multiple times
     if ((window as any).google && (window as any).google.maps) {
+      console.debug('Google Maps already available')
       setMapLoaded(true)
       return
     }
@@ -47,11 +48,8 @@ export default function Home() {
     const existing = document.querySelector('#gmaps-script') as HTMLScriptElement | null
     let created = false
     if (existing) {
-      // If the existing script has already loaded, setMapLoaded; otherwise attach handlers
-      if ((window as any).google && (window as any).google.maps) {
-        setMapLoaded(true)
-        return
-      }
+      console.debug('Found existing gmaps script element')
+      // attach handlers
       existing.addEventListener('load', () => {
         if ((window as any).google && (window as any).google.maps) setMapLoaded(true)
         else setLoadError('Google Maps loaded but google.maps is undefined')
@@ -60,28 +58,33 @@ export default function Home() {
       return
     }
 
-    fetch('/api/maps')
-      .then(res => res.text())
-      .then(scriptText => {
-        const script = document.createElement('script');
-        script.id = 'gmaps-script'
-        script.textContent = scriptText;
-        script.async = true;
-        document.head.appendChild(script);
-        created = true
-        script.onload = () => {
-          if ((window as any).google && (window as any).google.maps) {
-            setMapLoaded(true);
-          } else {
-            setLoadError('Google Maps loaded but google.maps is undefined');
-          }
-        };
-        script.onerror = () => setLoadError('Failed to load Google Maps script');
-      })
-      .catch(() => setLoadError('Failed to fetch Google Maps script from proxy'));
+    const key = (process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY as string) || ''
+    if (!key) {
+      setLoadError('Missing NEXT_PUBLIC_GOOGLE_MAPS_API_KEY')
+      return
+    }
+
+    const script = document.createElement('script')
+    script.id = 'gmaps-script'
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places,visualization`
+    script.async = true
+    script.defer = true
+    script.onload = () => {
+      console.debug('Google Maps script loaded')
+      if ((window as any).google && (window as any).google.maps) {
+        setMapLoaded(true)
+      } else {
+        setLoadError('Google Maps loaded but google.maps is undefined')
+      }
+    }
+    script.onerror = (e) => {
+      console.error('Failed to load Google Maps script', e)
+      setLoadError('Failed to load Google Maps script')
+    }
+    document.head.appendChild(script)
+    created = true
 
     return () => {
-      // Only remove if we created it in this effect run
       if (created) {
         const s = document.querySelector('#gmaps-script')
         if (s) s.remove()
