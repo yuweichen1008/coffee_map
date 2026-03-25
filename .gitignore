@@ -1,0 +1,6 @@
+GEMINI.md
+.next
+node_modules
+.aiexclude
+.env.local
+*.sql
