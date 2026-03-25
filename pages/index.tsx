@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import Error from '../components/Error';
 
@@ -19,6 +19,51 @@ const taipeiDistricts = {
 
 const storeTypes = ['cafe', 'grocery store', 'beverage store', 'boba'];
 
+/** 以區中心往外約半徑 halfKm（公里）建立搜尋範圍，涵蓋整個生活圈 */
+function districtBoundsFromCenter(
+  center: { lat: number; lng: number },
+  halfKm = 3.4,
+) {
+  const latHalf = halfKm / 111.32
+  const lngHalf =
+    halfKm / (111.32 * Math.cos((center.lat * Math.PI) / 180))
+  return {
+    north: center.lat + latHalf,
+    south: center.lat - latHalf,
+    east: center.lng + lngHalf,
+    west: center.lng - lngHalf,
+  }
+}
+
+/** 將行政區掰成網格，多點打 Nearby Search 以突破單圈 20/60 筆上限 */
+function buildDistrictSearchGrid(
+  bounds: ReturnType<typeof districtBoundsFromCenter>,
+  rows: number,
+  cols: number,
+) {
+  const { north, south, east, west } = bounds
+  const latStep = (north - south) / rows
+  const lngStep = (east - west) / cols
+  const midLat = (north + south) / 2
+  const cellLatM = latStep * 111320
+  const cellLngM = lngStep * 111320 * Math.cos((midLat * Math.PI) / 180)
+  const radius = Math.min(
+    5000,
+    Math.max(850, Math.ceil(0.92 * Math.hypot(cellLatM, cellLngM) / 2)),
+  )
+  const cells: { lat: number; lng: number; radius: number }[] = []
+  for (let i = 0; i < rows; i++) {
+    for (let j = 0; j < cols; j++) {
+      cells.push({
+        lat: south + (i + 0.5) * latStep,
+        lng: west + (j + 0.5) * lngStep,
+        radius,
+      })
+    }
+  }
+  return cells
+}
+
 export default function Home() {
   const mapRef = useRef<HTMLDivElement | null>(null)
   const [mapLoaded, setMapLoaded] = useState(false)
@@ -36,6 +81,13 @@ export default function Home() {
   const [stats, setStats] = useState({ type: '', count: 0 });
   const [reportStatus, setReportStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [placeCount, setPlaceCount] = useState(0)
+  const markersRef = useRef<any[]>([])
+  const prevDistrictRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    markersRef.current = markers
+  }, [markers])
 
   useEffect(() => {
     // Avoid injecting the Google Maps script multiple times (React StrictMode or re-mounts)
@@ -60,25 +112,28 @@ export default function Home() {
       return
     }
 
-    fetch('/api/maps')
-      .then(res => res.text())
-      .then(scriptText => {
-        const script = document.createElement('script');
-        script.id = 'gmaps-script'
-        script.textContent = scriptText;
-        script.async = true;
-        document.head.appendChild(script);
-        created = true
-        script.onload = () => {
-          if ((window as any).google && (window as any).google.maps) {
-            setMapLoaded(true);
-          } else {
-            setLoadError('Google Maps loaded but google.maps is undefined');
-          }
-        };
-        script.onerror = () => setLoadError('Failed to load Google Maps script');
-      })
-      .catch(() => setLoadError('Failed to fetch Google Maps script from proxy'));
+    const mapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+    if (!mapsKey) {
+      setLoadError('Missing NEXT_PUBLIC_GOOGLE_MAPS_API_KEY')
+      return
+    }
+
+    const script = document.createElement('script')
+    script.id = 'gmaps-script'
+    script.async = true
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(
+      mapsKey,
+    )}&libraries=places,visualization,geometry`
+    script.onload = () => {
+      if ((window as any).google && (window as any).google.maps) {
+        setMapLoaded(true)
+      } else {
+        setLoadError('Google Maps loaded but google.maps is undefined')
+      }
+    }
+    script.onerror = () => setLoadError('Failed to load Google Maps script')
+    document.head.appendChild(script)
+    created = true
 
     return () => {
       // Only remove if we created it in this effect run
@@ -114,12 +169,140 @@ export default function Home() {
     }
   }, [mapLoaded])
 
-  useEffect(() => {
-    if (googleMapRef.current) {
-      googleMapRef.current.panTo(taipeiDistricts[selectedDistrict]);
-      searchCafes();
+  const searchCafes = useCallback(async (): Promise<number> => {
+    setLoading(true)
+    setLoadError(null)
+    const map = googleMapRef.current
+    const g = (window as any).google
+    if (!map || !g?.maps) {
+      setLoading(false)
+      setLoadError('Map is not ready for search')
+      return 0
     }
-  }, [selectedDistrict, selectedStoreType]);
+
+    const center = taipeiDistricts[selectedDistrict]
+    const region = districtBoundsFromCenter(center)
+    const cells = buildDistrictSearchGrid(region, 5, 5)
+    const q = encodeURIComponent(selectedStoreType)
+    const maxPages = 2
+    const concurrency = 4
+
+    const byPlaceId = new Map<string, any>()
+
+    try {
+      for (let i = 0; i < cells.length; i += concurrency) {
+        const slice = cells.slice(i, i + concurrency)
+        const chunkResults = await Promise.all(
+          slice.map(async cell => {
+            const res = await fetch(
+              `/api/places?query=${q}&lat=${cell.lat}&lng=${cell.lng}&radius=${Math.round(
+                cell.radius,
+              )}&maxPages=${maxPages}`,
+            )
+            const data = await res.json()
+            if (!res.ok) {
+              throw new Error(data.error || `HTTP ${res.status}`)
+            }
+            return data.results || []
+          }),
+        )
+        for (const list of chunkResults) {
+          for (const place of list) {
+            const id = place.place_id || place.google_place_id
+            if (id && !byPlaceId.has(id)) byPlaceId.set(id, place)
+          }
+        }
+      }
+
+      const rows = Array.from(byPlaceId.values())
+
+      markersRef.current.forEach(m => {
+        if (m && typeof m.setMap === 'function') m.setMap(null)
+      })
+
+      if (!googleMapRef.current) return 0
+
+      const highlightIcon = {
+        path: g.maps.SymbolPath.CIRCLE,
+        scale: 11,
+        fillColor: '#ea580c',
+        fillOpacity: 0.95,
+        strokeColor: '#ffedd5',
+        strokeWeight: 2,
+      }
+
+      const newMarkers: any[] = []
+      const bounds = new g.maps.LatLngBounds()
+      setPlaceCount(rows.length)
+
+      rows.forEach((place: any) => {
+        const loc = place?.geometry?.location || { lat: place.lat, lng: place.lng }
+        if (loc.lat == null || loc.lng == null) return
+        const latNum = typeof loc.lat === 'function' ? loc.lat() : loc.lat
+        const lngNum = typeof loc.lng === 'function' ? loc.lng() : loc.lng
+        const pos = { lat: latNum, lng: lngNum }
+        bounds.extend(pos)
+        const marker = new g.maps.Marker({
+          position: pos,
+          map: googleMapRef.current,
+          title: place.name,
+          icon: highlightIcon,
+          optimized: true,
+        })
+        const infowindow = new g.maps.InfoWindow({
+          content: `<div style="max-width:220px"><strong>${place.name}</strong><br/>${place.vicinity || place.address || ''}</div>`,
+        })
+        marker.addListener('click', () =>
+          infowindow.open(googleMapRef.current, marker),
+        )
+        newMarkers.push(marker)
+      })
+
+      setMarkers(newMarkers)
+
+      if (newMarkers.length > 0) {
+        map.fitBounds(bounds, { top: 48, right: 48, bottom: 48, left: 48 })
+      }
+
+      return newMarkers.length
+    } catch (e: any) {
+      console.error('Error searching places', e)
+      setLoadError('搜尋失敗: ' + String(e?.message || e))
+      return 0
+    } finally {
+      setLoading(false)
+    }
+  }, [selectedStoreType, selectedDistrict])
+
+  useEffect(() => {
+    if (!googleMapRef.current) return
+    const map = googleMapRef.current
+    const g = (window as any).google?.maps
+    if (!g) return
+
+    const districtChanged = prevDistrictRef.current !== selectedDistrict
+    prevDistrictRef.current = selectedDistrict
+
+    const run = () => {
+      void searchCafes()
+    }
+
+    if (districtChanged) {
+      map.panTo(taipeiDistricts[selectedDistrict])
+      const id = g.event.addListenerOnce(map, 'idle', run)
+      return () => {
+        g.event.removeListener(id)
+      }
+    }
+
+    if (map.getBounds()) run()
+    else {
+      const id = g.event.addListenerOnce(map, 'idle', run)
+      return () => {
+        g.event.removeListener(id)
+      }
+    }
+  }, [selectedDistrict, selectedStoreType, searchCafes])
 
   useEffect(() => {
     if (!googleMapRef.current) return;
@@ -186,50 +369,6 @@ export default function Home() {
     fetchStats();
   }, [selectedStoreType]);
 
-
-  async function searchCafes(): Promise<number> {
-    setLoading(true);
-    setLoadError(null);
-    const { lat, lng } = taipeiDistricts[selectedDistrict];
-    const res = await fetch(`/api/places?query=${selectedStoreType}&lat=${lat}&lng=${lng}`)
-    try {
-      const data = await res.json()
-      if (res.ok) {
-        markers.forEach(m => { if (m && typeof m.setMap === 'function') m.setMap(null) })
-        const newMarkers: any[] = []
-        if (!googleMapRef.current) return
-        const g = (window as any).google
-        if (!g || !g.maps) {
-          console.error('google.maps not available when plotting markers')
-          return
-        }
-        (data.results || []).forEach((place: any) => {
-          const loc = place?.geometry?.location || { lat: place.lat, lng: place.lng };
-          if (!loc) return
-          const marker = new g.maps.Marker({
-            position: loc,
-            map: googleMapRef.current,
-            title: place.name,
-          })
-          const infowindow = new g.maps.InfoWindow({ content: `<div><strong>${place.name}</strong><br/>${place.address || place.vicinity || ''}</div>` })
-          marker.addListener('click', () => infowindow.open(googleMapRef.current, marker))
-          newMarkers.push(marker)
-        })
-        setMarkers(newMarkers)
-        // return number of markers plotted for callers
-        return newMarkers.length
-      } else {
-        setLoadError(data.error);
-      }
-    } catch (e) {
-      console.error('Error searching cafes', e)
-      setLoadError('搜尋失敗: ' + String(e))
-    } finally {
-      setLoading(false);
-    }
-    return 0
-  }
-
   // Developer helper: run a search, enable heatmap and report number of points
   async function testHeatmap() {
     try {
@@ -271,7 +410,7 @@ export default function Home() {
         <div className="h-full" ref={mapRef} title="Map" />
       </main>
       <aside className="w-1/4 p-4 bg-white shadow">
-        <h2 className="text-xl font-bold mb-2">Coffee Map MVP</h2>
+        <h2 className="text-xl font-bold mb-2">Coffee Heat Map Time Machine</h2>
         {loading && <div className="mb-2">Loading...</div>}
         <div className="mb-2">
           <label htmlFor="district-select" className="block text-sm font-medium text-gray-700">District</label>
@@ -298,6 +437,11 @@ export default function Home() {
               <option key={type} value={type}>{type}</option>
             ))}
           </select>
+          <p className="mt-1 text-xs text-gray-500">
+            Highlights <span className="font-medium">orange dots</span> for{' '}
+            <span className="font-medium">{selectedStoreType}</span> across the whole{' '}
+            <span className="font-medium">{selectedDistrict}</span> search grid ({placeCount} from Google, deduped).
+          </p>
         </div>
         <div className="mb-2">
           <label className="block text-sm font-medium text-gray-700">Zipcode (optional)</label>
