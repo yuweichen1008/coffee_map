@@ -198,3 +198,100 @@ Security and best practices
 - Use project-level secrets in CI rather than placing secrets in plain text in workflows.
 
 If you'd like I can add a GitHub Actions template that runs unit tests on PRs and runs `test:integration` against a staging Supabase project when secrets are provided.
+
+## Admin System
+
+The application includes an admin CMS interface that allows authorized users to manage and enrich coffee shop data from Google Places, keeping the database updated without repeated API calls.
+
+### Enabling Admin Access
+
+1. **Set the admin email in `.env.local`:**
+
+```text
+NEXT_PUBLIC_ADMIN_EMAIL=your-admin-email@example.com
+```
+
+Replace `your-admin-email@example.com` with the email address you want to grant admin privileges to.
+
+2. **The user must log in with the matching email:**
+
+After logging in with the admin email (via one-time code at the login prompt), the admin account is automatically activated.
+
+### Admin Features
+
+Once logged in as an admin:
+
+1. **Admin Link in Navigation**
+   - A red "Admin CMS" button appears in the top navigation bar (next to your email).
+   - Click it to access the admin dashboard at `/admin`.
+
+2. **Admin Dashboard** (`/admin` page)
+   - **Places Table:** Displays all cached coffee shops with columns: Name, Address, Category, Founded Date.
+   - **Edit Mode:** Click the "Edit" button to modify any place:
+     - Update name, address, category, and founded_date fields.
+     - Click "Save" to persist changes to Supabase.
+     - Click "Cancel" to discard changes.
+   - **Delete:** Click the "Delete" button to remove a place from the database.
+   - **Sync from Google Places:** Click the "Sync from Google Places" button to:
+     - Force-fetch fresh data from Google Maps API for the Neihu district.
+     - Automatically upsert new and updated places into Supabase.
+     - Shows a message with the count of places synced.
+
+### Admin Workflow Example
+
+1. Log in with your admin email.
+2. Navigate to the home page and search for cafes in a district (e.g., Neihu).
+3. Click the "Admin CMS" link in the navbar.
+4. Click "Sync from Google Places" to fetch the latest cafe data.
+5. Review the synced places in the table.
+6. Edit individual entries to add or update `founded_date` (useful for time-machine analysis).
+7. Click "Save" to persist your changes.
+8. Return to the home page; the "Stats" section will now show the updated count of saved stores.
+
+### Cost Efficiency
+
+By syncing places once and caching them in Supabase, repeated searches avoid redundant Google Maps API calls:
+
+- **Without caching:** Each search query calls Google Places API → high costs.
+- **With caching:** First admin sync populates Supabase → all subsequent searches use cached data → low costs.
+
+Admins can re-sync with "force refresh" when new data is needed, but regular users always query the cache first.
+
+### Marking Features as "Under Construction"
+
+The "回報新開店家" (Report New Store) button is currently disabled and labeled "尚未開放" (Not Open Yet) to indicate the feature is under development. This is managed via a disabled state on the button in the UI.
+
+## Data Seeding and Enrichment
+
+The `scripts` directory contains Python scripts to seed and enrich the database with data from the Google Places API.
+
+### Setup
+
+1.  **Install Python dependencies:**
+
+    ```bash
+    pip install -r scripts/requirements.txt
+    ```
+
+2.  **Ensure your `.env.local` file is up to date with:**
+    *   `GOOGLE_MAPS_API_KEY`
+    *   `NEXT_PUBLIC_SUPABASE_URL`
+    *   `SUPABASE_SERVICE_ROLE_KEY`
+
+### Running the Scripts
+
+1.  **Seed Coffee Shops:**
+
+    This script will find coffee shops in each district of Taipei and add them to your Supabase `places` table. It aims to find at least 10 per district.
+
+    ```bash
+    python scripts/seed_places.py
+    ```
+
+2.  **Update Founded Dates:**
+
+    This script will find the oldest Google Maps review for each coffee shop and use that as a proxy for its `founded_date`. This is useful for the "Time Machine" feature.
+
+    ```bash
+    python scripts/update_founded_dates.py
+    ```

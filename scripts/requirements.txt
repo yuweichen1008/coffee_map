@@ -1,0 +1,5 @@
+python-dotenv
+supabase
+googlemaps
+requests
+psycopg2-binary

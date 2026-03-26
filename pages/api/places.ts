@@ -2,11 +2,9 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { supabase } from '@/lib/supabaseClient';
 import { User } from '@supabase/supabase-js';
 
-// TODO: Replace with a real admin check
+// Check if user is admin by comparing email against NEXT_PUBLIC_ADMIN_EMAIL
 const isAdmin = (user: User) => {
-  // For now, anyone is an admin. In a real application, you would check the user's role.
-  // For example, you could have a `profiles` table with a `role` column.
-  return true;
+  return user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL;
 }
 
 const getPlacesFromCache = async (lat: number, lng: number, radius: number, keyword: string, startDate?: string, endDate?: string) => {

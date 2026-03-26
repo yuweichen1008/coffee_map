@@ -7,6 +7,7 @@ import type { Session } from '@supabase/supabase-js';
 import Error from '../components/Error';
 import Link from 'next/link';
 import DatePicker from 'react-datepicker';
+import Navbar from '@/components/Navbar';
 
 
 
@@ -93,6 +94,7 @@ export default function Home() {
   const [debugInfo, setDebugInfo] = useState<any>({ googleKey: false, supabaseConfigured: false, supabaseWritable: false, upsertReports: [] })
 
   const [session, setSession] = useState<Session | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [email, setEmail] = useState('')
   const [message, setMessage] = useState('')
 
@@ -102,12 +104,14 @@ export default function Home() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
+      setIsAdmin(session?.user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL)
     })
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
+      setIsAdmin(session?.user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL)
     })
 
     return () => subscription.unsubscribe()
@@ -248,6 +252,17 @@ export default function Home() {
 
       if (newMarkers.length > 0) {
         map.current.fitBounds(bounds, { padding: 48 });
+      }
+
+      // Refresh stats after successful fetch
+      try {
+        const statsRes = await fetch(`/api/stats?type=${selectedStoreType}`);
+        if (statsRes.ok) {
+          const statsData = await statsRes.json();
+          setStats(statsData);
+        }
+      } catch (e) {
+        console.warn('Failed to refresh stats after fetch', e);
       }
 
       return newMarkers.length
@@ -423,12 +438,14 @@ export default function Home() {
 
 
   return (
-    <div className="h-screen flex flex-col md:flex-row">
-      <main className="w-full md:w-3/4 h-1/2 md:h-full">
-        {loadError && <Error message={loadError} />}
-        <div className="h-full" ref={mapContainer} title="Map" />
-      </main>
-      <aside className="w-full md:w-1/4 p-4 bg-white shadow overflow-y-auto h-1/2 md:h-full">
+    <>
+      <Navbar isAdmin={isAdmin} userEmail={session?.user?.email} />
+      <div className="h-[calc(100vh-64px)] flex flex-col md:flex-row">
+        <main className="w-full md:w-3/4 h-1/2 md:h-full">
+          {loadError && <Error message={loadError} />}
+          <div className="h-full" ref={mapContainer} title="Map" />
+        </main>
+        <aside className="w-full md:w-1/4 p-4 bg-white shadow overflow-y-auto h-1/2 md:h-full">
         <h2 className="text-xl font-bold mb-2">Coffee Heat Map Time Machine</h2>
 
         {!session ? (
@@ -494,6 +511,8 @@ export default function Home() {
           <p>Saved {stats.type} stores: {stats.count}</p>
         </div>
         <div className="mt-4">
+          <h3 className="font-semibold">Heat Map Legacy</h3>
+          <p className="text-sm text-gray-600 mb-2">Store Count: {placeCount}</p>
           <label htmlFor="heatmap-toggle" className="flex items-center">
             <input
               type="checkbox"
@@ -507,7 +526,7 @@ export default function Home() {
         </div>
         <div className="mt-4">
           <h3 className="font-semibold">回報與點數</h3>
-          <button onClick={reportNewPlace} className="mt-2 bg-green-600 text-white px-3 py-2 rounded">回報新開店家（+10）</button>
+          <button onClick={reportNewPlace} className="mt-2 bg-green-600 text-white px-3 py-2 rounded disabled:opacity-50 disabled:cursor-not-allowed" disabled>回報新開店家（尚未開放）</button>
           {reportStatus && <p className="mt-2 text-sm text-gray-600">{reportStatus}</p>}
         </div>
         <div className="mt-4 p-3 bg-gray-50 border rounded">
@@ -565,5 +584,6 @@ export default function Home() {
         </div>
       </aside>
     </div>
+    </>
   )
 }
