@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
+import { supabase, isWritable } from '../lib/supabaseClient';
+import type { Session } from '@supabase/supabase-js';
 
 import Error from '../components/Error';
+import Link from 'next/link';
+import DatePicker from 'react-datepicker';
+
+
 
 const taipeiDistricts = {
   'Da\'an': { lat: 25.026, lng: 121.543 },
@@ -22,7 +30,7 @@ const storeTypes = ['cafe', 'grocery store', 'beverage store', 'boba'];
 /** 以區中心往外約半徑 halfKm（公里）建立搜尋範圍，涵蓋整個生活圈 */
 function districtBoundsFromCenter(
   center: { lat: number; lng: number },
-  halfKm = 3.4,
+  halfKm = 1,
 ) {
   const latHalf = halfKm / 111.32
   const lngHalf =
@@ -65,13 +73,11 @@ function buildDistrictSearchGrid(
 }
 
 export default function Home() {
-  const mapRef = useRef<HTMLDivElement | null>(null)
-  const [mapLoaded, setMapLoaded] = useState(false)
+  const mapContainer = useRef<HTMLDivElement | null>(null);
+  const map = useRef<mapboxgl.Map | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null)
   const [markers, setMarkers] = useState<any[]>([])
-  const googleMapRef = useRef<any>(null)
-  const heatmapRef = useRef<any>(null);
-
+  
   const [zipcode, setZipcode] = useState('')
   const [categories, setCategories] = useState<string[]>([])
 
@@ -84,62 +90,48 @@ export default function Home() {
   const [placeCount, setPlaceCount] = useState(0)
   const markersRef = useRef<any[]>([])
   const prevDistrictRef = useRef<string | null>(null)
+  const [debugInfo, setDebugInfo] = useState<any>({ googleKey: false, supabaseConfigured: false, supabaseWritable: false, upsertReports: [] })
+
+  const [session, setSession] = useState<Session | null>(null)
+  const [email, setEmail] = useState('')
+  const [message, setMessage] = useState('')
+
+  const [startDate, setStartDate] = useState<Date | null>(null);
+  const [endDate, setEndDate] = useState<Date | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+    })
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
 
   useEffect(() => {
     markersRef.current = markers
   }, [markers])
 
   useEffect(() => {
-    // Avoid injecting the Google Maps script multiple times
-    if ((window as any).google && (window as any).google.maps) {
-      console.debug('Google Maps already available')
-      setMapLoaded(true)
-      return
+    if (map.current) return; // initialize map only once
+    if (!process.env.NEXT_PUBLIC_MAPBOX_TOKEN) {
+      setLoadError('Missing NEXT_PUBLIC_MAPBOX_TOKEN');
+      return;
     }
+    map.current = new mapboxgl.Map({
+      container: mapContainer.current!,
+      accessToken: process.env.NEXT_PUBLIC_MAPBOX_TOKEN,
+      style: 'mapbox://styles/mapbox/streets-v11',
+      center: [taipeiDistricts[selectedDistrict].lng, taipeiDistricts[selectedDistrict].lat],
+      zoom: 14
+    });
+  });
 
-    const existing = document.querySelector('#gmaps-script') as HTMLScriptElement | null
-    let created = false
-    if (existing) {
-      console.debug('Found existing gmaps script element')
-      // attach handlers
-      existing.addEventListener('load', () => {
-        if ((window as any).google && (window as any).google.maps) setMapLoaded(true)
-        else setLoadError('Google Maps loaded but google.maps is undefined')
-      })
-      existing.addEventListener('error', () => setLoadError('Failed to load Google Maps script'))
-      return
-    }
-
-    const mapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
-    if (!mapsKey) {
-      setLoadError('Missing NEXT_PUBLIC_GOOGLE_MAPS_API_KEY')
-      return
-    }
-
-    const script = document.createElement('script')
-    script.id = 'gmaps-script'
-    script.async = true
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(
-      mapsKey,
-    )}&libraries=places,visualization,geometry`
-    script.onload = () => {
-      if ((window as any).google && (window as any).google.maps) {
-        setMapLoaded(true)
-      } else {
-        setLoadError('Google Maps loaded but google.maps is undefined')
-      }
-    }
-    script.onerror = () => setLoadError('Failed to load Google Maps script')
-    document.head.appendChild(script)
-    created = true
-
-    return () => {
-      if (created) {
-        const s = document.querySelector('#gmaps-script')
-        if (s) s.remove()
-      }
-    }
-  }, [])
 
   useEffect(() => {
     fetch('/api/categories')
@@ -148,58 +140,65 @@ export default function Home() {
       .catch(() => setCategories(storeTypes))
   }, [])
 
-  useEffect(() => {
-    if (!mapLoaded || !mapRef.current) return
-    try {
-      const g = (window as any).google
-      if (!g || !g.maps) {
-        setLoadError('google.maps is not available')
-        return
-      }
-      googleMapRef.current = new g.maps.Map(mapRef.current, {
-        center: taipeiDistricts[selectedDistrict],
-        zoom: 15,
-      })
-    } catch (e: any) {
-      console.error('Error creating Google Map', e)
-      setLoadError(String(e?.message || e))
-    }
-  }, [mapLoaded])
 
-  const searchCafes = useCallback(async (): Promise<number> => {
+  const searchCafes = useCallback(async (forceRefresh = false): Promise<number> => {
     setLoading(true)
     setLoadError(null)
-    const map = googleMapRef.current
-    const g = (window as any).google
-    if (!map || !g?.maps) {
+    
+    if (!map.current) {
       setLoading(false)
       setLoadError('Map is not ready for search')
       return 0
+    }
+
+    if (!session) {
+      setLoading(false);
+      setLoadError('You must be logged in to search');
+      return 0;
     }
 
     const center = taipeiDistricts[selectedDistrict]
     const region = districtBoundsFromCenter(center)
     const cells = buildDistrictSearchGrid(region, 5, 5)
     const q = encodeURIComponent(selectedStoreType)
-    const maxPages = 2
+    const maxPages = 1
     const concurrency = 4
 
     const byPlaceId = new Map<string, any>()
 
-    try {
+  const aggregatedSupabaseReports: any[] = []
+  try {
       for (let i = 0; i < cells.length; i += concurrency) {
         const slice = cells.slice(i, i + concurrency)
         const chunkResults = await Promise.all(
           slice.map(async cell => {
+            let url = `/api/places?query=${q}&lat=${cell.lat}&lng=${cell.lng}&radius=${Math.round(
+              cell.radius,
+            )}&maxPages=${maxPages}`;
+            if (forceRefresh) {
+              url += '&force_refresh=true';
+            }
+            if (startDate) {
+              url += `&start_date=${startDate.toISOString()}`;
+            }
+            if (endDate) {
+              url += `&end_date=${endDate.toISOString()}`;
+            }
             const res = await fetch(
-              `/api/places?query=${q}&lat=${cell.lat}&lng=${cell.lng}&radius=${Math.round(
-                cell.radius,
-              )}&maxPages=${maxPages}`,
+              url,
+              {
+                headers: {
+                  'Authorization': `Bearer ${session.access_token}`
+                }
+              }
             )
             const data = await res.json()
             if (!res.ok) {
-              throw new Error(data.error || `HTTP ${res.status}`)
+              // throw server error message for UI
+              throw (data.error || `HTTP ${res.status}`) as any
             }
+            // gather supabase reports if present
+            if (data.supabase) aggregatedSupabaseReports.push(data.supabase)
             return data.results || []
           }),
         )
@@ -214,51 +213,41 @@ export default function Home() {
       const rows = Array.from(byPlaceId.values())
 
       markersRef.current.forEach(m => {
-        if (m && typeof m.setMap === 'function') m.setMap(null)
+        if (m && typeof m.remove === 'function') m.remove()
       })
 
-      if (!googleMapRef.current) return 0
-
-      const highlightIcon = {
-        path: g.maps.SymbolPath.CIRCLE,
-        scale: 11,
-        fillColor: '#ea580c',
-        fillOpacity: 0.95,
-        strokeColor: '#ffedd5',
-        strokeWeight: 2,
-      }
+      if (!map.current) return 0
 
       const newMarkers: any[] = []
-      const bounds = new g.maps.LatLngBounds()
+      const bounds = new mapboxgl.LngLatBounds();
       setPlaceCount(rows.length)
+
+      // set debug info from supabase reports
+      if (aggregatedSupabaseReports.length > 0) {
+        setDebugInfo((d: any) => ({ ...d, upsertReports: aggregatedSupabaseReports }))
+      }
 
       rows.forEach((place: any) => {
         const loc = place?.geometry?.location || { lat: place.lat, lng: place.lng }
         if (loc.lat == null || loc.lng == null) return
         const latNum = typeof loc.lat === 'function' ? loc.lat() : loc.lat
         const lngNum = typeof loc.lng === 'function' ? loc.lng() : loc.lng
-        const pos = { lat: latNum, lng: lngNum }
+        const pos: [number, number] = [lngNum, latNum];
         bounds.extend(pos)
-        const marker = new g.maps.Marker({
-          position: pos,
-          map: googleMapRef.current,
-          title: place.name,
-          icon: highlightIcon,
-          optimized: true,
+        const marker = new mapboxgl.Marker({
+          color: '#ea580c',
         })
-        const infowindow = new g.maps.InfoWindow({
-          content: `<div style="max-width:220px"><strong>${place.name}</strong><br/>${place.vicinity || place.address || ''}</div>`,
-        })
-        marker.addListener('click', () =>
-          infowindow.open(googleMapRef.current, marker),
-        )
+          .setLngLat(pos)
+          .setPopup(new mapboxgl.Popup().setHTML(`<div style="max-width:220px"><strong>${place.name}</strong><br/>${place.vicinity || place.address || ''}</div>`))
+          .addTo(map.current!);
+        
         newMarkers.push(marker)
       })
 
       setMarkers(newMarkers)
 
       if (newMarkers.length > 0) {
-        map.fitBounds(bounds, { top: 48, right: 48, bottom: 48, left: 48 })
+        map.current.fitBounds(bounds, { padding: 48 });
       }
 
       return newMarkers.length
@@ -268,15 +257,19 @@ export default function Home() {
       return 0
     } finally {
       setLoading(false)
+      // update google key and supabase configured status for debug panel
+      setDebugInfo((d: any) => ({
+        ...d,
+        googleKey: Boolean(process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY),
+        supabaseConfigured: Boolean(supabase),
+        supabaseWritable: Boolean(isWritable),
+      }))
     }
-  }, [selectedStoreType, selectedDistrict])
+  }, [selectedStoreType, selectedDistrict, session, startDate, endDate])
 
   useEffect(() => {
-    if (!googleMapRef.current) return
-    const map = googleMapRef.current
-    const g = (window as any).google?.maps
-    if (!g) return
-
+    if (!map.current) return
+    
     const districtChanged = prevDistrictRef.current !== selectedDistrict
     prevDistrictRef.current = selectedDistrict
 
@@ -285,50 +278,34 @@ export default function Home() {
     }
 
     if (districtChanged) {
-      map.panTo(taipeiDistricts[selectedDistrict])
-      const id = g.event.addListenerOnce(map, 'idle', run)
-      return () => {
-        g.event.removeListener(id)
-      }
+      map.current.panTo([taipeiDistricts[selectedDistrict].lng, taipeiDistricts[selectedDistrict].lat])
+      map.current.once('idle', run)
     }
 
-    if (map.getBounds()) run()
+    if (map.current.isStyleLoaded()) run()
     else {
-      const id = g.event.addListenerOnce(map, 'idle', run)
-      return () => {
-        g.event.removeListener(id)
-      }
+      map.current.once('idle', run)
     }
   }, [selectedDistrict, selectedStoreType, searchCafes])
 
   useEffect(() => {
-    if (!googleMapRef.current) return;
+    if (!map.current) return;
 
-    if (heatmapRef.current) {
-      heatmapRef.current.setMap(null);
+    if (map.current.getLayer('heatmap')) {
+      map.current.removeLayer('heatmap');
+    }
+    if (map.current.getSource('heatmap-source')) {
+      map.current.removeSource('heatmap-source');
     }
 
     if (showHeatmap) {
-      const g = (window as any).google
-      if (!g || !g.maps || !g.maps.visualization) {
-        console.error('google.maps.visualization not available when creating heatmap');
-        return;
-      }
-      // Build safe points array: filter out invalid markers or positions
       const points = markers
         .map(m => {
           try {
-            if (!m || typeof m.getPosition !== 'function') return null
-            const pos = m.getPosition()
+            if (!m || typeof m.getLngLat !== 'function') return null
+            const pos = m.getLngLat()
             if (!pos) return null
-            // Normalize to plain {lat, lng}
-            if (typeof pos.lat === 'function' && typeof pos.lng === 'function') {
-              return { lat: pos.lat(), lng: pos.lng() }
-            }
-            if (pos.lat !== undefined && pos.lng !== undefined) {
-              return { lat: pos.lat, lng: pos.lng }
-            }
-            return null
+            return { lat: pos.lat, lng: pos.lng }
           } catch (e) {
             return null
           }
@@ -340,11 +317,32 @@ export default function Home() {
         return
       }
 
-      // Convert to LatLng objects expected by HeatmapLayer
-      const latLngPoints = points.map((p: any) => new g.maps.LatLng(p.lat, p.lng))
-      heatmapRef.current = new g.maps.visualization.HeatmapLayer({
-        data: latLngPoints,
-        map: googleMapRef.current
+      const features = points.map(p => ({
+        // cast to any to avoid strict GeoJSON typing in prototype
+        type: 'Feature' as any,
+        properties: {},
+        geometry: {
+          type: 'Point' as any,
+          coordinates: [p!.lng, p!.lat]
+        }
+      }));
+
+      map.current.addSource('heatmap-source', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: features
+        }
+      });
+
+      map.current.addLayer({
+        id: 'heatmap',
+        type: 'heatmap',
+        source: 'heatmap-source',
+        paint: {
+          'heatmap-radius': 20,
+          'heatmap-intensity': 0.5,
+        }
       });
     }
   }, [showHeatmap, markers]);
@@ -399,15 +397,62 @@ export default function Home() {
     }
   }
 
+  const handleRegister = async () => {
+    setMessage('');
+  const { error } = await supabase.auth.signInWithOtp({ email });
+    if (error) {
+      setMessage(error.message);
+    } else {
+      setMessage('Registration successful! Please check your email to confirm.');
+    }
+  }
+
+  const handleLogin = async () => {
+    setMessage('');
+    const { error } = await supabase.auth.signInWithOtp({ email });
+    if (error) {
+      setMessage(error.message);
+    } else {
+      setMessage('Check your email for the login link!');
+    }
+  }
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+  }
+
+
   return (
-    <div className="h-screen flex">
-      <main className="w-3/4 h-full">
-        {!mapLoaded && !loadError && <div className="flex h-full items-center justify-center">Map is loading...</div>}
+    <div className="h-screen flex flex-col md:flex-row">
+      <main className="w-full md:w-3/4 h-1/2 md:h-full">
         {loadError && <Error message={loadError} />}
-        <div className="h-full" ref={mapRef} title="Map" />
+        <div className="h-full" ref={mapContainer} title="Map" />
       </main>
-      <aside className="w-1/4 p-4 bg-white shadow">
+      <aside className="w-full md:w-1/4 p-4 bg-white shadow overflow-y-auto h-1/2 md:h-full">
         <h2 className="text-xl font-bold mb-2">Coffee Heat Map Time Machine</h2>
+
+        {!session ? (
+          <div className="mb-4">
+            <h3 className="font-semibold">Login / Register</h3>
+            <input
+              type="email"
+              placeholder="Your email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="mt-1 block w-full p-2 border rounded"
+            />
+            <button onClick={handleLogin} className="mt-2 bg-blue-600 text-white px-3 py-2 rounded">Login with one-time code</button>
+            <button onClick={handleRegister} className="mt-2 ml-2 bg-green-600 text-white px-3 py-2 rounded">Register</button>
+            {message && <p className="mt-2 text-sm text-gray-600">{message}</p>}
+          </div>
+        ) : (
+          <div className="mb-4">
+            <h3 className="font-semibold">Welcome!</h3>
+            <p>Logged in as: {session.user.email}</p>
+            <button onClick={handleLogout} className="mt-2 bg-red-600 text-white px-3 py-2 rounded">Logout</button>
+          </div>
+        )}
+
         {loading && <div className="mb-2">Loading...</div>}
         <div className="mb-2">
           <label htmlFor="district-select" className="block text-sm font-medium text-gray-700">District</label>
@@ -441,7 +486,7 @@ export default function Home() {
           </p>
         </div>
         <div className="mb-2">
-          <label className="block text-sm font-medium text-gray-700">Zipcode (optional)</label>
+          <label className="block text-sm font-medium text-.gray-700">Zipcode (optional)</label>
           <input value={zipcode} onChange={e => setZipcode(e.target.value)} placeholder="e.g. 104" className="mt-1 block w-full p-2 border rounded" />
         </div>
         <div className="mt-4">
@@ -465,9 +510,58 @@ export default function Home() {
           <button onClick={reportNewPlace} className="mt-2 bg-green-600 text-white px-3 py-2 rounded">回報新開店家（+10）</button>
           {reportStatus && <p className="mt-2 text-sm text-gray-600">{reportStatus}</p>}
         </div>
+        <div className="mt-4 p-3 bg-gray-50 border rounded">
+          <h3 className="font-semibold">Debug</h3>
+          <p className="text-sm">Google Maps Key: {debugInfo.googleKey ? 'present' : 'missing'}</p>
+          <p className="text-sm">Supabase Configured: {debugInfo.supabaseConfigured ? 'yes' : 'no'}</p>
+          <p className="text-sm">Supabase Writable: {debugInfo.supabaseWritable ? 'yes' : 'no'}</p>
+          <div className="mt-2 text-xs">
+            <strong>Upsert reports (recent):</strong>
+            <pre className="text-xs max-h-40 overflow-auto">{JSON.stringify(debugInfo.upsertReports || [], null, 2)}</pre>
+          </div>
+        </div>
         <div className="mt-4">
           <h3 className="font-semibold">Developer</h3>
           <button onClick={testHeatmap} className="mt-2 bg-indigo-600 text-white px-3 py-2 rounded">Test Heatmap</button>
+          <button onClick={() => searchCafes(true)} className="mt-2 ml-2 bg-red-600 text-white px-3 py-2 rounded">Force Refresh</button>
+        </div>
+        <div className="mt-4">
+          <h3 className="font-semibold">Time Machine</h3>
+          <div className="flex items-center">
+            <DatePicker
+              selected={startDate}
+              onChange={(date) => setStartDate(date)}
+              selectsStart
+              startDate={startDate}
+              endDate={endDate}
+              placeholderText="Start Date"
+              className="mt-1 block w-full p-2 border rounded"
+            />
+            <span className="mx-2">to</span>
+            <DatePicker
+              selected={endDate}
+              onChange={(date) => setEndDate(date)}
+              selectsEnd
+              startDate={startDate}
+              endDate={endDate}
+              minDate={startDate}
+              placeholderText="End Date"
+              className="mt-1 block w-full p-2 border rounded"
+            />
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <h3 className="font-semibold">About</h3>
+          <Link href="/about" className="text-blue-500 hover:underline">
+            About Us
+          </Link>
+        </div>
+        <div className="mt-4">
+            <h3 className="font-semibold">Request Analysis</h3>
+            <Link href="/request" className="text-blue-500 hover:underline">
+                Go to Request Page
+            </Link>
         </div>
       </aside>
     </div>

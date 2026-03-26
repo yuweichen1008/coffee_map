@@ -3,4 +3,3 @@ GEMINI.md
 node_modules
 .aiexclude
 .env.local
-*.sql
