@@ -1,297 +1,242 @@
-# Coffee Map
+# Taipei Business Map
 
-A web application to help business owners find the best location for their next coffee shop. It provides a map-based interface to visualize store locations, a heatmap to identify booming and saturated areas, and a "Time Machine" feature to analyze historical data.
+Location intelligence for business owners. Visualize where stores are thriving, where gaps exist, and how the competitive landscape has changed over time — across any business category in Taipei.
 
-## Project Goals
+## What It Does
 
--   Provide data-driven insights to business owners.
--   Visualize coffee shop distribution in a given area.
--   Analyze historical trends to predict future opportunities.
+- **Spot opportunities:** See which districts are undersaturated for a given store type before committing to a lease.
+- **Track growth over time:** The Time Machine feature replays how a category expanded across Taipei year by year, using each store's estimated founding date.
+- **Identify hot and cold zones:** A heatmap highlights density clusters so you can see which neighborhoods are booming and which are quiet.
+- **Multi-category analysis:** Switch between coffee shops, convenience stores, grocery stores, restaurants, bakeries, and more — same map, same tools.
 
-## Features
+## Key Features
 
--   **Map View:** An interactive map showing the locations of coffee shops.
--   **Heatmap:** A visual representation of the density of coffee shops.
--   **Time Machine:** A feature to view store data from different points in time.
--   **User Authentication:** Users can register and log in to access the application.
--   **Admin Features:** Admins can refresh the data from external sources.
--   **Request Analysis:** Users can request an analysis of a potential new store location.
+| Feature | Description |
+|---|---|
+| **Interactive Map** | Mapbox-powered map with per-district filtering |
+| **Heatmap** | Density overlay to visualize hot and cold zones |
+| **Time Machine** | Date-range slider to view store counts at any point in history |
+| **Multi-category** | Toggle across business types (cafe, grocery, convenience store, etc.) |
+| **Admin CMS** | Authorized admins can sync, edit, and enrich place data |
+| **User Reports** | Community contribution system with gamification points |
 
-## Technology Stack
+## Tech Stack
 
--   **Framework:** [Next.js](https://nextjs.org/)
--   **Database:** [Supabase](https://supabase.io/)
--   **Map:** [Mapbox](https://www.mapbox.com/)
--   **Styling:** [Tailwind CSS](https://tailwindcss.com/)
+| Layer | Technology |
+|---|---|
+| Framework | [Next.js 13](https://nextjs.org/) + TypeScript |
+| Database | [Supabase](https://supabase.io/) (PostgreSQL + PostGIS) |
+| Map | [Mapbox GL JS](https://www.mapbox.com/) |
+| Styling | [Tailwind CSS](https://tailwindcss.com/) |
+| Data source | [Google Places API](https://developers.google.com/maps/documentation/places/web-service) |
+| Scripting | Python 3 (data ingestion pipeline) |
 
-## Database
+## Architecture
 
-The database is hosted on Supabase. It consists of the following tables:
-
--   `places`: Stores the information about the coffee shops.
--   `users`: Stores user data.
--   `profiles`: Stores user profiles, including their roles.
-
-### Schema
-
-**`places` table:**
-
-| Column          | Type    | Description                           |
-| --------------- | ------- | ------------------------------------- |
-| `id`            | `uuid`  | Primary key.                          |
-| `name`          | `text`  | The name of the coffee shop.          |
-| `address`       | `text`  | The address of the coffee shop.       |
-| `lat`           | `float` | The latitude of the coffee shop.      |
-| `lng`           | `float` | The longitude of the coffee shop.     |
-| `google_place_id`| `text`  | The Google Place ID of the coffee shop. |
-| `category`      | `text`  | The category of the store (e.g., "cafe"). |
--   `founded_date` | `date` | The date the store was founded. |
-| `created_at`    | `timestamp` | The timestamp when the record was created. |
-
-### Setup
-
-1.  **Create a Supabase project.**
-2.  **Create the tables:**
-    -   You can use the Supabase dashboard to create the tables manually.
-    -   Alternatively, you can run the `scripts/create_tables.js` script to create the tables programmatically.
-3.  **Seed the data:**
-    -   Run the `npm run db:seed` command to seed the database with some sample data.
-
-## Roadmap
-
--   [x] Setup project environment.
--   [x] Implement user authentication.
--   [x] Develop backend API for places.
--   [x] Integrate Mapbox for map display.
--   [x] Build frontend UI for login, account, and about me sections.
--   [x] Implement heatmap and time machine feature.
--   [ ] Write unit tests for Supabase and Mapbox.
--   [ ] Improve the "Request Analysis" feature with real data analysis.
--   [ ] Add more data sources for the "Time Machine" feature.
+```
+Google Places API
+       │
+       ▼
+Python scripts (scripts/)
+  seed_taipei_all_districts.py  →  taipei_coffee_shops.csv  →  Supabase (manual import)
+  update_founded_dates.py       →  backfills founded_date in Supabase
+       │
+       ▼
+Supabase (PostgreSQL + PostGIS)
+  places, categories, districts, zone_density (materialized view)
+       │
+       ▼
+Next.js API routes (pages/api/)
+  /api/places      – spatial + temporal queries
+  /api/stats       – counts per category
+  /api/categories  – available store types
+       │
+       ▼
+Mapbox GL JS (pages/index.tsx)
+  markers, heatmap layer, time machine date filter
+```
 
 ## Getting Started
 
 ### Prerequisites
 
--   Node.js 18+
--   npm
--   A Supabase project.
--   A Mapbox account.
+- Node.js 18+
+- A [Supabase](https://app.supabase.com) project (free tier works)
+- A [Mapbox](https://account.mapbox.com) account (free tier works)
+- A [Google Maps Platform](https://console.cloud.google.com) project with Places API enabled
 
 ### Environment Variables
 
-Create a `.env.local` file in the root of the project and add the following environment variables:
-
-```
-NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=your-publishable-key-here
-NEXT_PUBLIC_MAPBOX_TOKEN=your-mapbox-token-here
-GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
-```
-
-### Installation
-
-1.  Install the dependencies:
-
-    ```bash
-    npm install
-    ```
-
-2.  Run the development server:
-
-    ```bash
-    npm run dev
-    ```
-
-The application will be available at `http://localhost:3000`.
-### Quick start — full Supabase setup (what every new developer should do first)
-
-Follow these steps exactly to set up a Supabase-backed development environment (init DB → seed → run):
-
-1) Create a Supabase project
-
-- Go to https://app.supabase.com and create a new project.
-- After the project is created, open Project Settings → API and copy the **Project URL** (this is `SUPABASE_URL`) and the **Service Role** key (this is `SUPABASE_SERVICE_ROLE_KEY`). Keep the service role key secret.
-
-2) Prepare `.env.local` in the project root
-
-Create a `.env.local` file (gitignored) and add the following keys. Replace values with those from your Supabase project and your Map/Places provider keys:
+Create a `.env.local` file in the project root:
 
 ```text
+# Mapbox
 NEXT_PUBLIC_MAPBOX_TOKEN=pk.your_mapbox_token
+
+# Google Maps — use browser-restricted key for NEXT_PUBLIC, unrestricted for server
 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=your_browser_google_maps_key
 GOOGLE_MAPS_API_KEY=your_server_google_maps_key
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-# Optional: publishable (anon) key for client reads
+
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=your_anon_key
-# Optional: direct DB URL if you have DB admin access (for scripts/init_db.js)
-DATABASE_URL=postgres://<user>:<pass>@<host>:5432/<db>
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key   # keep secret — never commit
+
+# Admin
+NEXT_PUBLIC_ADMIN_EMAIL=your-admin-email@example.com
 ```
 
-Notes:
-- Use the browser key for `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` and the server key for `GOOGLE_MAPS_API_KEY` if possible.
-- If you do not have `DATABASE_URL`, you can still initialize the DB using Supabase's SQL Editor (next step).
+### Database Setup
 
-3) Initialize the database (choose one)
+1. Open your Supabase project → **SQL Editor**
+2. Paste the contents of `db/init_all.sql` and run it
+3. This creates all extensions, tables, indexes, the `zone_density` materialized view, and seed categories
 
-a) Recommended (Supabase SQL Editor — no DB admin connection required)
+> **Note:** The service role key is required for server-side writes. If Row-Level Security blocks writes during development, make sure `SUPABASE_SERVICE_ROLE_KEY` is set.
 
-- Open Supabase → SQL Editor, paste the contents of `db/init_all.sql`, and run it. This creates extensions (pgcrypto, postgis), tables, a spatial index, and inserts minimal sample rows.
-
-b) From your machine (requires `DATABASE_URL` with admin rights)
-
-- Install `pg` if not installed:
-
-```bash
-npm install pg
-```
-
-- Run the init script which executes `db/init_all.sql`:
-
-```bash
-npm run db:init
-```
-
-This runs `scripts/init_db.js` and requires `DATABASE_URL` (or `SUPABASE_DB_URL`) in `.env.local` and a connection that can create extensions.
-
-4) Seed data (optional)
-
-If you want additional sample rows used by the app, run the seed script which uses the Supabase client and the service role key:
-
-```bash
-npm run db:seed
-```
-
-This requires `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to be set in `.env.local`.
-
-5) Run the app locally
-
-Install dependencies and start the dev server:
+### Run Locally
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open http://localhost:3000
+Open [http://localhost:3000](http://localhost:3000).
 
-6) Run integration connectivity test (optional, CI)
+## Data Pipeline
 
-- A safe, read-only integration test lives under `integration/supabase-connection.test.ts`. It is designed to be skipped locally when credentials are not present.
-- To run it locally or in CI, ensure `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are present in environment or `.env.local`, then run:
+Populate the database with real Taipei store data:
+
+**Step 1 — Scrape Google Places → CSV**
 
 ```bash
-npm run test:integration
+cd scripts
+pip install -r requirements.txt
+python seed_taipei_all_districts.py
 ```
 
-CI recommendation
-- Add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to your CI provider secrets (only for staging tests). In Github Actions, add them to repository secrets and run `npm ci` then `npm run test:integration` in a workflow step.
+This fetches coffee shops across all 12 Taipei districts, enriches each with a `founded_date` (estimated from the oldest Google review), and writes `taipei_coffee_shops.csv`.
 
-Troubleshooting
-- If a SQL command fails because you cannot create extensions (permission error), use Supabase SQL Editor where the project role has permission, or ask the project owner to run the init SQL.
-- If seeded writes fail locally or in tests because Row-Level Security (RLS) is enabled, use the **Service Role** key for server-side writes (never commit this key). The integration test reads only and is safe when RLS blocks writes.
+**Step 2 — Import CSV into Supabase**
 
-Security and best practices
-- Never commit `.env.local` or service role keys to source control.
-- Use project-level secrets in CI rather than placing secrets in plain text in workflows.
+- Supabase dashboard → `places` table → **Import data** → select `taipei_coffee_shops.csv`
+- Map columns: `google_place_id`, `name`, `address`, `lat`, `lng`, `category`, `source`, `founded_date`
 
-If you'd like I can add a GitHub Actions template that runs unit tests on PRs and runs `test:integration` against a staging Supabase project when secrets are provided.
+**Step 3 — Backfill missing founding dates (optional)**
+
+```bash
+python update_founded_dates.py
+```
+
+Updates any `places` rows where `founded_date` is NULL by querying the oldest Google review.
+
+## Database Schema
+
+### `categories`
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | uuid | Primary key |
+| `name` | text | Unique slug (`cafe`, `convenience_store`, `grocery`) |
+| `display_name` | text | Human-readable label shown in UI |
+| `group_name` | text | Category group (`f_and_b`, `retail`, `services`) |
+| `icon` | text | Icon key for UI rendering |
+| `description` | text | Optional description |
+
+### `districts`
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | uuid | Primary key |
+| `name` | text | English district name (`Daan`, `Xinyi`, …) |
+| `name_zh` | text | Chinese name (`大安區`) |
+| `center_lat` / `center_lng` | float | Map center for the district |
+| `bounds` | jsonb | GeoJSON polygon for district boundary |
+
+### `places`
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | uuid | Primary key |
+| `google_place_id` | text | Unique Google Place ID |
+| `name` | text | Store name |
+| `address` | text | Street address |
+| `district` | text | Taipei district (denormalized for fast filtering) |
+| `zipcode` | text | Postal code |
+| `lat` / `lng` | float | GPS coordinates |
+| `location` | geometry(Point) | PostGIS point (SRID 4326) — spatially indexed |
+| `category` | text | Category slug (denormalized) |
+| `category_id` | uuid | FK → `categories.id` |
+| `source` | text | `google_maps_api` \| `admin` \| `user_report` |
+| `status` | text | `active` \| `closed` \| `relocated` |
+| `founded_date` | date | Estimated store opening date |
+| `founded_date_confidence` | text | `estimated` \| `verified` \| `unknown` |
+| `closed_date` | date | When the store closed (if applicable) |
+| `rating` | real | Google rating (1.0 – 5.0) |
+| `review_count` | integer | Number of Google reviews |
+| `google_data` | jsonb | Raw Google Places API payload |
+| `created_at` / `updated_at` | timestamptz | Record timestamps |
+
+**Indexes:** spatial GIST on `location`, composite `(category, district)` for BI queries, `founded_date` for Time Machine queries.
+
+### `zone_density` (materialized view)
+
+Pre-computed ~200 m grid cells with store counts per category. Used by the heatmap to avoid full table scans on every map interaction. Refresh with:
+
+```sql
+REFRESH MATERIALIZED VIEW public.zone_density;
+```
+
+### `reports`
+
+User-submitted store reports. Each accepted report awards the submitter 10 points tracked in `user_points`.
 
 ## Admin System
 
-The application includes an admin CMS interface that allows authorized users to manage and enrich coffee shop data from Google Places, keeping the database updated without repeated API calls.
+### Enable Admin Access
 
-### Enabling Admin Access
-
-1. **Set the admin email in `.env.local`:**
+Add to `.env.local`:
 
 ```text
 NEXT_PUBLIC_ADMIN_EMAIL=your-admin-email@example.com
 ```
 
-Replace `your-admin-email@example.com` with the email address you want to grant admin privileges to.
+Log in with that email via the OTP prompt. A red **Admin CMS** button appears in the navbar.
 
-2. **The user must log in with the matching email:**
+### Admin Dashboard (`/admin`)
 
-After logging in with the admin email (via one-time code at the login prompt), the admin account is automatically activated.
-
-### Admin Features
-
-Once logged in as an admin:
-
-1. **Admin Link in Navigation**
-   - A red "Admin CMS" button appears in the top navigation bar (next to your email).
-   - Click it to access the admin dashboard at `/admin`.
-
-2. **Admin Dashboard** (`/admin` page)
-   - **Places Table:** Displays all cached coffee shops with columns: Name, Address, Category, Founded Date.
-   - **Edit Mode:** Click the "Edit" button to modify any place:
-     - Update name, address, category, and founded_date fields.
-     - Click "Save" to persist changes to Supabase.
-     - Click "Cancel" to discard changes.
-   - **Delete:** Click the "Delete" button to remove a place from the database.
-   - **Sync from Google Places:** Click the "Sync from Google Places" button to:
-     - Force-fetch fresh data from Google Maps API for the Neihu district.
-     - Automatically upsert new and updated places into Supabase.
-     - Shows a message with the count of places synced.
-
-### Admin Workflow Example
-
-1. Log in with your admin email.
-2. Navigate to the home page and search for cafes in a district (e.g., Neihu).
-3. Click the "Admin CMS" link in the navbar.
-4. Click "Sync from Google Places" to fetch the latest cafe data.
-5. Review the synced places in the table.
-6. Edit individual entries to add or update `founded_date` (useful for time-machine analysis).
-7. Click "Save" to persist your changes.
-8. Return to the home page; the "Stats" section will now show the updated count of saved stores.
+- **Places table** — view all cached stores with name, address, category, founded date
+- **Inline edit** — update any field and save directly to Supabase
+- **Delete** — remove a place from the database
+- **Sync from Google Places** — force-fetch fresh data for a district and upsert results
 
 ### Cost Efficiency
 
-By syncing places once and caching them in Supabase, repeated searches avoid redundant Google Maps API calls:
+First admin sync populates Supabase → all subsequent user searches hit the cache → Google Places API is only called on explicit admin re-sync.
 
-- **Without caching:** Each search query calls Google Places API → high costs.
-- **With caching:** First admin sync populates Supabase → all subsequent searches use cached data → low costs.
+## Testing
 
-Admins can re-sync with "force refresh" when new data is needed, but regular users always query the cache first.
+```bash
+# Unit tests
+npm test
 
-### Marking Features as "Under Construction"
+# Integration test (requires Supabase credentials in .env.local)
+npm run test:integration
+```
 
-The "回報新開店家" (Report New Store) button is currently disabled and labeled "尚未開放" (Not Open Yet) to indicate the feature is under development. This is managed via a disabled state on the button in the UI.
+The integration test is read-only and safe to run against a live Supabase project.
 
-## Data Seeding and Enrichment
+## Roadmap
 
-The `scripts` directory contains Python scripts to seed and enrich the database with data from the Google Places API.
-
-### Setup
-
-1.  **Install Python dependencies:**
-
-    ```bash
-    pip install -r scripts/requirements.txt
-    ```
-
-2.  **Ensure your `.env.local` file is up to date with:**
-    *   `GOOGLE_MAPS_API_KEY`
-    *   `NEXT_PUBLIC_SUPABASE_URL`
-    *   `SUPABASE_SERVICE_ROLE_KEY`
-
-### Running the Scripts
-
-1.  **Seed Coffee Shops:**
-
-    This script will find coffee shops in each district of Taipei and add them to your Supabase `places` table. It aims to find at least 10 per district.
-
-    ```bash
-    python scripts/seed_places.py
-    ```
-
-2.  **Update Founded Dates:**
-
-    This script will find the oldest Google Maps review for each coffee shop and use that as a proxy for its `founded_date`. This is useful for the "Time Machine" feature.
-
-    ```bash
-    python scripts/update_founded_dates.py
-    ```
+- [x] Interactive Mapbox map with district filtering
+- [x] Heatmap density overlay
+- [x] Time Machine date-range filtering
+- [x] Google Places data ingestion pipeline
+- [x] Admin CMS for data management
+- [x] User authentication (email OTP)
+- [x] Multi-category support (cafe, grocery, convenience store, etc.)
+- [ ] `zone_density` materialized view wired to heatmap API
+- [ ] District boundary polygons in `districts` table
+- [ ] Store lifecycle tracking (closed / relocated stores)
+- [ ] "Request Analysis" feature with real scoring model
+- [ ] Public API for third-party integrations

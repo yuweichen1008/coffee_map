@@ -1,82 +1,159 @@
+"""
+Stage 2 — Enrich Founded Dates
+================================
+For every place in Supabase where founded_date is NULL, this script
+calls Google Places Details to fetch reviews and uses the oldest review
+timestamp as a proxy for the store's founding date.
+
+Why oldest review ≈ founded date
+----------------------------------
+Google Places API does not expose a store's official opening date.
+The oldest available review is the best public signal. Caveat: the API
+returns at most 5 reviews (sorted by relevance), so the "oldest" here
+is the oldest among those 5 — not necessarily the very first review
+ever left. The founded_date_confidence column is set to 'estimated'
+to flag this uncertainty.
+
+Resumable
+----------
+The script only processes rows where founded_date IS NULL, so it can be
+interrupted and re-run safely. Already-enriched rows are never touched.
+
+Usage
+-----
+  cd scripts
+  python update_founded_dates.py [--limit N] [--dry-run]
+
+  --limit N    Process at most N places (useful for testing)
+  --dry-run    Fetch dates but do not write back to Supabase
+"""
+
+import argparse
 import os
+import sys
 import time
 from datetime import datetime
 from dotenv import load_dotenv
 import googlemaps
 from supabase import create_client, Client
 
-# Load environment variables from .env.local
-load_dotenv(dotenv_path='../.env.local')
+# ── Environment ──────────────────────────────────────────────────────────────
+env_path = os.path.join(os.path.dirname(__file__), '..', '.env.local')
+load_dotenv(dotenv_path=env_path)
 
-# Configuration
-SUPABASE_URL = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
-SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
+SUPABASE_URL        = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+SUPABASE_KEY        = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
-if not all([SUPABASE_URL, SUPABASE_SERVICE_KEY, GOOGLE_MAPS_API_KEY]):
-    raise ValueError("Missing required environment variables.")
+if not GOOGLE_MAPS_API_KEY:
+    sys.exit("ERROR: GOOGLE_MAPS_API_KEY is not set in .env.local")
+if not SUPABASE_URL or not SUPABASE_KEY:
+    sys.exit("ERROR: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not set in .env.local")
 
-# Initialize clients
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
+gmaps: googlemaps.Client = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
+supabase: Client         = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-def get_oldest_review_date(place_id: str) -> str | None:
+# Seconds to wait between Google API calls. Each Place Details call costs
+# one API request. Stay well under the 100 QPS default limit.
+API_DELAY = 1.5
+
+
+def get_oldest_review_date(google_place_id: str) -> str | None:
     """
-    Fetches reviews for a place and returns the oldest review date.
+    Fetches Place Details for the given ID and returns the date of the
+    oldest review as 'YYYY-MM-DD', or None if no reviews are available.
+
+    Note: Google returns at most 5 reviews. The oldest among them is used
+    as the estimated founded date.
     """
     try:
-        # Get place details, specifically reviews
-        place_details = gmaps.place(
-            place_id=place_id,
+        details = gmaps.place(
+            place_id=google_place_id,
             fields=['review'],
-            language='en'
+            language='en',
         )
-        
-        reviews = place_details.get('result', {}).get('reviews', [])
+        reviews = details.get('result', {}).get('reviews', [])
         if not reviews:
             return None
 
-        # Find the oldest review by sorting
-        oldest_review = min(reviews, key=lambda r: r.get('time', float('inf')))
-        
-        # Convert timestamp to ISO 8601 date string
-        if 'time' in oldest_review:
-            return datetime.fromtimestamp(oldest_review['time']).strftime('%Y-%m-%d')
-            
+        oldest = min(reviews, key=lambda r: r.get('time', float('inf')))
+        if 'time' in oldest:
+            return datetime.fromtimestamp(oldest['time']).strftime('%Y-%m-%d')
+
     except Exception as e:
-        print(f"Could not fetch details for {place_id}: {e}")
-    
+        print(f"    [WARN] Could not fetch reviews for {google_place_id}: {e}")
+
     return None
 
-def update_founded_dates():
-    """
-    Updates places in Supabase with an estimated founded date from the oldest review.
-    """
-    # Fetch places that don't have a founded_date yet
-    response = supabase.table('places').select('id, google_place_id').is_('founded_date', 'null').execute()
-    
-    if not response.data:
-        print("No places found that need a founded date update.")
+
+def enrich(limit: int | None, dry_run: bool) -> None:
+    # Fetch only places that still need enrichment
+    query = (
+        supabase.table('places')
+        .select('id, name, google_place_id')
+        .is_('founded_date', 'null')
+        .not_.is_('google_place_id', 'null')  # skip seed rows with no Place ID
+    )
+    if limit:
+        query = query.limit(limit)
+
+    response = query.execute()
+    places   = response.data
+
+    if not places:
+        print("All places already have a founded_date. Nothing to do.")
         return
 
-    places_to_update = response.data
-    print(f"Found {len(places_to_update)} places to update with a founded date.")
+    print(f"Found {len(places)} places to enrich.")
+    if dry_run:
+        print("[DRY RUN] Will fetch dates but not write to Supabase.\n")
 
-    for place in places_to_update:
-        print(f"Processing place ID: {place['google_place_id']}")
-        oldest_date = get_oldest_review_date(place['google_place_id'])
-        
-        if oldest_date:
-            try:
-                # Update the record in Supabase
-                supabase.table('places').update({'founded_date': oldest_date}).eq('id', place['id']).execute()
-                print(f"  -> Updated founded date to {oldest_date}")
-            except Exception as e:
-                print(f"  -> Failed to update founded date: {e}")
+    found     = 0
+    not_found = 0
+
+    for i, place in enumerate(places, start=1):
+        gid  = place['google_place_id']
+        name = place.get('name', gid)
+        print(f"[{i}/{len(places)}] {name}")
+
+        date = get_oldest_review_date(gid)
+
+        if date:
+            print(f"  → oldest review: {date}")
+            found += 1
+            if not dry_run:
+                try:
+                    supabase.table('places').update({
+                        'founded_date':            date,
+                        'founded_date_confidence': 'estimated',
+                    }).eq('id', place['id']).execute()
+                except Exception as e:
+                    print(f"  [ERROR] Supabase update failed: {e}")
         else:
-            print("  -> No reviews found, cannot determine founded date.")
-            
-        time.sleep(1.5) # To avoid hitting API rate limits
+            print(f"  → no reviews found, skipping")
+            not_found += 1
 
+        time.sleep(API_DELAY)
+
+    print(f"\n{'─' * 50}")
+    print(f"Enriched : {found}")
+    print(f"No reviews: {not_found}")
+    if dry_run:
+        print("[DRY RUN] No data was written.")
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    update_founded_dates()
+    parser = argparse.ArgumentParser(description="Stage 2: enrich founded_date from Google review timestamps")
+    parser.add_argument('--limit',   type=int, default=None, help='Max number of places to process')
+    parser.add_argument('--dry-run', action='store_true',    help='Fetch dates but do not write to Supabase')
+    args = parser.parse_args()
+
+    print("=" * 50)
+    print("FOUNDED DATE ENRICHER  —  Stage 2 of 2")
+    print(f"Limit  : {args.limit or 'all'}")
+    print(f"Dry run: {args.dry_run}")
+    print("=" * 50)
+    print()
+
+    enrich(limit=args.limit, dry_run=args.dry_run)

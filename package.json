@@ -6,7 +6,6 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "db:seed": "ts-node -r dotenv/config scripts/seed.ts",
     "test": "jest"
     ,"test:integration": "jest integration --runInBand"
   },
