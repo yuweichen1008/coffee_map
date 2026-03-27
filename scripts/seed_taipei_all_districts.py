@@ -22,6 +22,8 @@ Usage
 """
 
 import argparse
+import base64
+import json
 import os
 import sys
 import time
@@ -42,8 +44,33 @@ if not GOOGLE_MAPS_API_KEY:
 if not SUPABASE_URL or not SUPABASE_KEY:
     sys.exit("ERROR: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not set in .env.local")
 
+
+def _jwt_role(token: str) -> str:
+    """Decode the JWT payload (no signature verification) and return the role claim."""
+    try:
+        payload_b64 = token.split('.')[1]
+        # Add padding so base64 doesn't complain
+        payload_b64 += '=' * (-len(payload_b64) % 4)
+        payload = json.loads(base64.b64decode(payload_b64))
+        return payload.get('role', 'unknown')
+    except Exception:
+        return 'unknown'
+
+
+_key_role = _jwt_role(SUPABASE_KEY)
+if _key_role != 'service_role':
+    sys.exit(
+        f"ERROR: SUPABASE_SERVICE_ROLE_KEY has role='{_key_role}' — expected 'service_role'.\n"
+        "  → In your Supabase dashboard: Settings → API → copy the 'service_role' key (not 'anon').\n"
+        "  → Update SUPABASE_SERVICE_ROLE_KEY in .env.local and retry."
+    )
+
 gmaps: googlemaps.Client = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 supabase: Client         = create_client(SUPABASE_URL, SUPABASE_KEY)
+# supabase-py v2 sends the key as `apikey` but not as `Authorization: Bearer`,
+# so PostgREST doesn't see the service role and RLS blocks writes.
+# Explicitly setting auth here fixes that.
+supabase.postgrest.auth(SUPABASE_KEY)
 
 # ── District definitions ─────────────────────────────────────────────────────
 # Center coordinates only. Bounds-polygon support is in the districts table;

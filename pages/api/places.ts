@@ -113,12 +113,6 @@ const savePlacesToCache = async (places: any[], keyword: string) => {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const { data: { user } } = await supabase.auth.getUser(req.headers.authorization?.split(' ')[1]);
-
-  if (!user) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
   const { query, lat, lng, radius: radiusQ, maxPages: maxPagesQ, force_refresh, start_date, end_date } = req.query as {
     query?: string
     lat?: string
@@ -141,6 +135,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!Number.isFinite(radiusMeters) || radiusMeters < 1) radiusMeters = 2000;
   radiusMeters = Math.min(50000, Math.max(200, radiusMeters));
 
+  // Step 1: always try the cache — no auth required for reads
   if (force_refresh !== 'true') {
     const cachedPlaces = await getPlacesFromCache(parsedLat, parsedLng, radiusMeters, keyword, start_date, end_date);
     if (cachedPlaces && cachedPlaces.length > 0) {
@@ -148,8 +143,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
   }
 
-  if (!isAdmin(user)) {
-    return res.status(403).json({ error: 'Forbidden: You are not authorized to perform this action.' });
+  // Step 2: cache miss — only admins may trigger a live Google fetch
+  const token = req.headers.authorization?.split(' ')[1];
+  const { data: { user } } = await supabase.auth.getUser(token);
+  if (!user || !isAdmin(user)) {
+    // Return empty gracefully — not an error for public users
+    return res.status(200).json({ results: [], source: 'no_cache' });
   }
 
   try {

@@ -14,10 +14,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const { category, zipcode } = req.query as { category?: string, zipcode?: string }
   if (!supabase) return res.status(200).json({ results: [] })
   try {
-    let query = supabase.from('places').select('id,name,lat,lng,category,zipcode')
+    let query = supabase
+      .from('places')
+      .select('id,name,address,lat,lng,category,district,zipcode,founded_date,status')
+      .eq('status', 'active')
     if (category) query = query.eq('category', category)
     if (zipcode) query = query.eq('zipcode', zipcode)
-    const { data, error } = await query.limit(500)
+    const { data, error } = await query.limit(2000)
     if (error) throw error
     return res.status(200).json({ results: data })
   } catch (e) {

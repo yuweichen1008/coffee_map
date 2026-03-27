@@ -35,7 +35,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { count, error } = await supabase
       .from('places')
       .select('*', { count: 'exact', head: true })
-      .eq('category', type);
+      .eq('category', type)
+      .neq('status', 'closed');
 
     if (error) {
       // If table missing, return zero gracefully
