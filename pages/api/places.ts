@@ -8,34 +8,26 @@ const isAdmin = (user: User) => {
 }
 
 const getPlacesFromCache = async (lat: number, lng: number, radius: number, keyword: string, startDate?: string, endDate?: string) => {
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  if (!supabase) return null;
 
   const metersToLat = (m: number) => m / 111320;
   const metersToLng = (m: number, lat: number) => m / (111320 * Math.cos(lat * Math.PI / 180));
   const latDelta = metersToLat(radius);
   const lngDelta = metersToLng(radius, lat);
-  const latMin = lat - latDelta;
-  const latMax = lat + latDelta;
-  const lngMin = lng - lngDelta;
-  const lngMax = lng + lngDelta;
 
+  // No staleness filter — always show cached data regardless of age.
+  // Freshness is managed by admin re-sync, not by hiding old data from users.
   let query = supabase
     .from('places')
     .select('*')
     .eq('category', keyword)
-    .gte('lat', latMin)
-    .lte('lat', latMax)
-    .gte('lng', lngMin)
-    .lte('lng', lngMax)
-    .gt('created_at', sevenDaysAgo.toISOString());
+    .gte('lat', lat - latDelta)
+    .lte('lat', lat + latDelta)
+    .gte('lng', lng - lngDelta)
+    .lte('lng', lng + lngDelta);
 
-  if (startDate) {
-    query = query.gte('founded_date', startDate);
-  }
-  if (endDate) {
-    query = query.lte('founded_date', endDate);
-  }
+  if (startDate) query = query.gte('founded_date', startDate);
+  if (endDate)   query = query.lte('founded_date', endDate);
 
   const { data: cachedPlaces, error } = await query;
 
@@ -101,7 +93,7 @@ const savePlacesToCache = async (places: any[], keyword: string) => {
 
   for (const p of placesToInsert) {
     if (!p.google_place_id) continue;
-    const { data, error } = await supabase.from('places').upsert(p, { onConflict: 'google_place_id' });
+    const { error } = await supabase.from('places').upsert(p, { onConflict: 'google_place_id' });
     if (error) {
       upsertReport.errors.push({ place: p.name, error });
     } else {

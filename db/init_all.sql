@@ -109,6 +109,18 @@ BEGIN
   END IF;
 END$$;
 
+-- Index for dead-zone queries (status + closed_date)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE c.relname = 'places_status_closed_date_idx' AND n.nspname = 'public'
+  ) THEN
+    EXECUTE 'CREATE INDEX places_status_closed_date_idx ON public.places (status, closed_date)';
+  END IF;
+END$$;
+
 -- ============================================================
 -- find_places_nearby
 -- Spatial + temporal query function used by /api/places.
@@ -156,6 +168,36 @@ WHERE status = 'active'
 GROUP BY category, district, ST_SnapToGrid(location, 0.002, 0.002);
 
 CREATE INDEX IF NOT EXISTS zone_density_category_idx ON public.zone_density (category);
+
+-- ============================================================
+-- dead_zone_clusters (materialized view)
+-- ~200m grid cells with high business failure density per category.
+-- A cluster with closure_rate > 0.3 and closed_count >= 3 is a
+-- meaningful "avoid this block" signal for business owners.
+-- Refresh: REFRESH MATERIALIZED VIEW public.dead_zone_clusters;
+-- ============================================================
+CREATE MATERIALIZED VIEW IF NOT EXISTS public.dead_zone_clusters AS
+SELECT
+  category,
+  district,
+  ST_SnapToGrid(location, 0.002, 0.002)                         AS grid_cell,
+  COUNT(*) FILTER (WHERE status = 'closed')                      AS closed_count,
+  COUNT(*)                                                        AS total_count,
+  ROUND(
+    COUNT(*) FILTER (WHERE status = 'closed')::numeric / COUNT(*),
+    2
+  )                                                               AS closure_rate,
+  MIN(closed_date)                                                AS earliest_closure,
+  MAX(closed_date)                                                AS latest_closure
+FROM public.places
+WHERE location IS NOT NULL
+GROUP BY category, district, ST_SnapToGrid(location, 0.002, 0.002)
+HAVING COUNT(*) FILTER (WHERE status = 'closed') > 0;
+
+CREATE INDEX IF NOT EXISTS dead_zone_clusters_category_idx
+  ON public.dead_zone_clusters (category);
+CREATE INDEX IF NOT EXISTS dead_zone_clusters_rate_idx
+  ON public.dead_zone_clusters (closure_rate DESC);
 
 -- ============================================================
 -- reports

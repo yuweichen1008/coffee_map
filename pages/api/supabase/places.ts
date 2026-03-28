@@ -1,26 +1,29 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
-import { createClient } from '@supabase/supabase-js'
-import { URL } from 'url'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY
-
-let supabase = null
-if (supabaseUrl && supabaseKey) {
-  try { supabase = createClient(supabaseUrl, supabaseKey) } catch (e) { supabase = null }
-}
+import { supabase } from '@/lib/supabaseClient'
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const { category, zipcode } = req.query as { category?: string, zipcode?: string }
+  const { category, include_closed } = req.query as {
+    category?:       string
+    include_closed?: string   // 'true' → return active + closed; default active only
+  }
+
   if (!supabase) return res.status(200).json({ results: [] })
+
   try {
     let query = supabase
       .from('places')
-      .select('id,name,address,lat,lng,category,district,zipcode,founded_date,status')
-      .eq('status', 'active')
+      .select('id,name,address,lat,lng,category,district,founded_date,closed_date,status')
+
+    if (include_closed !== 'true') {
+      // Default: exclude explicitly closed stores (home page, etc.)
+      query = query.neq('status', 'closed')
+    }
+    // When include_closed=true we return everything — the Time Machine
+    // handles active vs. closed rendering client-side.
+
     if (category) query = query.eq('category', category)
-    if (zipcode) query = query.eq('zipcode', zipcode)
-    const { data, error } = await query.limit(2000)
+
+    const { data, error } = await query.limit(8000)
     if (error) throw error
     return res.status(200).json({ results: data })
   } catch (e) {

@@ -1,24 +1,37 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY
-
-let supabase = null
-if (supabaseUrl && supabaseKey) {
-  try { supabase = createClient(supabaseUrl, supabaseKey) } catch (e) { supabase = null }
-}
+import { supabase } from '@/lib/supabaseClient'
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (supabase) {
-    try {
-      const { data, error } = await supabase.from('categories').select('name')
-      if (error) throw error
-      return res.status(200).json({ categories: data.map((r: any) => r.name) })
-    } catch (e) {
-      console.error('Supabase categories fetch failed', e)
-      // fallthrough to static
+  try {
+    // Prefer the categories table; fall back to distinct values in places
+    const { data: catRows, error: catErr } = await supabase
+      .from('categories')
+      .select('name')
+      .order('name')
+
+    if (!catErr && catRows && catRows.length > 0) {
+      return res.status(200).json({ categories: catRows.map((r: any) => r.name) })
     }
+
+    // categories table empty or missing — derive from places
+    const { data: placeRows, error: placeErr } = await supabase
+      .from('places')
+      .select('category')
+      .neq('status', 'closed')
+      .not('category', 'is', null)
+
+    if (placeErr) throw placeErr
+
+    const seen = new Set<string>()
+    const unique: string[] = []
+    for (const r of placeRows ?? []) {
+      const cat = r.category as string
+      if (!seen.has(cat)) { seen.add(cat); unique.push(cat) }
+    }
+    unique.sort()
+    return res.status(200).json({ categories: unique })
+  } catch (e) {
+    console.error('categories fetch failed', e)
+    return res.status(200).json({ categories: ['cafe', 'convenience_store', 'restaurant', 'bakery', 'beverage_store'] })
   }
-  return res.status(200).json({ categories: ['cafe', 'restaurant', 'bakery', '米漢堡'] })
 }
