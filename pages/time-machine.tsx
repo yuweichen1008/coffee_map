@@ -203,19 +203,38 @@ export default function TimeMachine() {
     setDeadCount(countDead(year))
   }, [countActive, countDead])
 
-  // ── Load category data ────────────────────────────────────────────────────────
+  // ── Load category data (batch streamed) ──────────────────────────────────────
   const loadCategory = useCallback(async (cat: string) => {
     if (!map.current) return
     setLoading(true)
     setError(null)
+    setTotalLoaded(0)
+
+    // ── Stream all places (active + closed) in batches ────────────────────────
+    let allRows: any[] = []
+    let offset = 0
+    const BATCH = 500
+
+    while (true) {
+      try {
+        const res  = await fetch(
+          `/api/supabase/places?category=${encodeURIComponent(cat)}&include_closed=true&offset=${offset}&limit=${BATCH}`,
+        )
+        const json = await res.json()
+        const rows = json.results || []
+        allRows = [...allRows, ...rows]
+        setTotalLoaded(allRows.length)
+        if (!json.hasMore || rows.length === 0) break
+        offset += BATCH
+      } catch (e) {
+        setError('Failed to load: ' + String(e))
+        setLoading(false)
+        return
+      }
+    }
 
     try {
-      // Fetch ALL places (active + closed) so dead-zone layer has its data
-      const res  = await fetch(
-        `/api/supabase/places?category=${encodeURIComponent(cat)}&include_closed=true`,
-      )
-      const json = await res.json()
-      const rows: any[] = json.results || []
+      const rows = allRows
 
       const features: PlaceFeature[] = rows
         .filter(p => p.lat != null && p.lng != null)
@@ -473,9 +492,9 @@ export default function TimeMachine() {
       applyYearFilter(dataYearMax, showDeadZones)
     } catch (e) {
       setError('Failed to load: ' + String(e))
-    } finally {
-      setLoading(false)
     }
+
+    setLoading(false)
   }, [applyYearFilter, showDeadZones])
 
   // ── Reload on category change ─────────────────────────────────────────────────
@@ -597,14 +616,24 @@ export default function TimeMachine() {
           </div>
         )}
 
-        {/* Loading */}
+        {/* Loading — shows live row count as batches arrive */}
         {loading && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/75 text-white px-4 py-2 rounded-lg text-sm backdrop-blur-sm flex items-center gap-2">
-            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-            </svg>
-            Loading {category.replace(/_/g, ' ')}…
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/80 text-white px-4 py-2.5 rounded-xl text-sm backdrop-blur-sm flex items-center gap-3 shadow-lg">
+            {/* Shimmer progress bar */}
+            <div className="relative w-24 h-1.5 rounded-full bg-white/10 overflow-hidden">
+              <div
+                className="absolute inset-0 rounded-full"
+                style={{
+                  backgroundImage: `linear-gradient(90deg, transparent 0%, ${accent} 40%, ${accent}cc 60%, transparent 100%)`,
+                  backgroundSize: '200% 100%',
+                  animation: 'shimmer 1.4s ease-in-out infinite',
+                }}
+              />
+            </div>
+            <span className="text-gray-400">Loading</span>
+            {totalLoaded > 0 && (
+              <span className="font-bold tabular-nums" style={{ color: accent }}>{totalLoaded}</span>
+            )}
           </div>
         )}
 

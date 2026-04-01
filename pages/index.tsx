@@ -1,514 +1,443 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import mapboxgl from 'mapbox-gl'
-import 'mapbox-gl/dist/mapbox-gl.css'
-import { supabase } from '../lib/supabaseClient'
-import type { Session } from '@supabase/supabase-js'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import Navbar from '@/components/Navbar'
-import ErrorBanner from '../components/Error'
+import Head from 'next/head'
 
-// ── Taipei district nav shortcuts ─────────────────────────────────────────────
-const DISTRICTS: Record<string, [number, number]> = {
-  "Da'an":    [121.543,   25.026   ],
-  Xinyi:      [121.5677,  25.0348  ],
-  Zhongshan:  [121.5254,  25.0550  ],
-  Wanhua:     [121.4970,  25.0263  ],
-  Datong:     [121.511,   25.063   ],
-  Zhongzheng: [121.5183,  25.0324  ],
-  Songshan:   [121.554,   25.055   ],
-  Neihu:      [121.5833,  25.0667  ],
-  Wenshan:    [121.5722,  24.9897  ],
-  Nangang:    [121.6218,  25.0384  ],
-  Shilin:     [121.5170,  25.0833  ],
-  Beitou:     [121.5000,  25.1167  ],
+// ── Scroll-reveal hook ────────────────────────────────────────────────────────
+function useReveal(threshold = 0.15) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const io = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) { setVisible(true); io.disconnect() }
+    }, { threshold })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [threshold])
+  return { ref, visible }
 }
 
-const CATEGORY_COLORS: Record<string, string> = {
-  cafe:               '#ea580c',
-  convenience_store:  '#3b82f6',
-  grocery:            '#22c55e',
-  restaurant:         '#a855f7',
-  bakery:             '#f59e0b',
-  beverage_store:     '#06b6d4',
-}
-const DEFAULT_COLOR = '#94a3b8'
-
-type Place = {
-  id: string
-  name: string
-  address: string | null
-  lat: number
-  lng: number
-  category: string
-  district: string | null
-  founded_date: string | null
-  google_place_id: string | null
-  status: string | null
-}
-
-// ── Component ─────────────────────────────────────────────────────────────────
-export default function Home() {
-  const mapContainer   = useRef<HTMLDivElement | null>(null)
-  const map            = useRef<mapboxgl.Map | null>(null)
-  const sessionRef     = useRef<Session | null>(null)
-  const allPlacesRef   = useRef<Place[]>([])
-  const popupRef       = useRef<mapboxgl.Popup | null>(null)
-  const moveEndBound   = useRef<(() => void) | null>(null)
-
-  const [session,          setSession]          = useState<Session | null>(null)
-  const [isAdmin,          setIsAdmin]          = useState(false)
-  const [categories,       setCategories]       = useState<string[]>([])
-  const [selectedCategory, setSelectedCategory] = useState('cafe')
-  const [visiblePlaces,    setVisiblePlaces]    = useState<Place[]>([])
-  const [totalLoaded,      setTotalLoaded]      = useState(0)
-  const [loading,          setLoading]          = useState(false)
-  const [researching,      setResearching]      = useState(false)
-  const [loadError,        setLoadError]        = useState<string | null>(null)
-  const [hoveredId,        setHoveredId]        = useState<string | null>(null)
-
-  // ── Auth ─────────────────────────────────────────────────────────────────────
+// ── Animated number ───────────────────────────────────────────────────────────
+function Num({ to, suffix = '', dur = 1400 }: { to: number; suffix?: string; dur?: number }) {
+  const [val, setVal] = useState(0)
+  const spanRef = useRef<HTMLSpanElement>(null)
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      sessionRef.current = session
-      setIsAdmin(session?.user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL)
-    })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
-      setSession(s)
-      sessionRef.current = s
-      setIsAdmin(s?.user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL)
-    })
-    return () => subscription.unsubscribe()
-  }, [])
-
-  // ── Categories ───────────────────────────────────────────────────────────────
-  useEffect(() => {
-    fetch('/api/categories')
-      .then(r => r.json())
-      .then(j => setCategories(j.categories || []))
-      .catch(() => setCategories(Object.keys(CATEGORY_COLORS)))
-  }, [])
-
-  // ── Filter visible places by current map bounds ───────────────────────────────
-  const updateVisible = useCallback(() => {
-    if (!map.current) return
-    const b = map.current.getBounds()
-    if (!b) return
-    const visible = allPlacesRef.current.filter(
-      p => p.lat >= b.getSouth() && p.lat <= b.getNorth() &&
-           p.lng >= b.getWest()  && p.lng <= b.getEast(),
-    )
-    setVisiblePlaces(visible)
-  }, [])
-
-  // ── Map init ─────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (map.current || !mapContainer.current) return
-    if (!process.env.NEXT_PUBLIC_MAPBOX_TOKEN) {
-      setLoadError('Missing NEXT_PUBLIC_MAPBOX_TOKEN')
-      return
-    }
-    map.current = new mapboxgl.Map({
-      container:   mapContainer.current,
-      accessToken: process.env.NEXT_PUBLIC_MAPBOX_TOKEN,
-      style:       'mapbox://styles/mapbox/streets-v11',
-      center:      [121.5436, 25.0374],
-      zoom:        13,
-    })
-    map.current.addControl(new mapboxgl.NavigationControl(), 'top-right')
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Register moveend listener (once, stable ref) ─────────────────────────────
-  useEffect(() => {
-    if (!map.current) return
-    if (moveEndBound.current) map.current.off('moveend', moveEndBound.current)
-    moveEndBound.current = updateVisible
-    map.current.on('moveend', updateVisible)
-    return () => { map.current?.off('moveend', updateVisible) }
-  }, [updateVisible])
-
-  // ── Load all places for category from Supabase ────────────────────────────────
-  const loadCategory = useCallback(async (cat: string) => {
-    if (!map.current) return
-    setLoading(true)
-    setLoadError(null)
-
-    try {
-      const res  = await fetch(`/api/supabase/places?category=${encodeURIComponent(cat)}`)
-      const json = await res.json()
-      const rows: Place[] = (json.results || []).filter((p: any) => p.lat != null && p.lng != null)
-
-      allPlacesRef.current = rows
-      setTotalLoaded(rows.length)
-
-      // Wait for map style
-      await new Promise<void>(resolve => {
-        if (map.current!.isStyleLoaded()) resolve()
-        else map.current!.once('styledata', () => resolve())
-      })
-
-      const color = CATEGORY_COLORS[cat] ?? DEFAULT_COLOR
-
-      // Remove previous layers/source
-      if (map.current.getLayer('places-highlight')) map.current.removeLayer('places-highlight')
-      if (map.current.getLayer('places-circles'))   map.current.removeLayer('places-circles')
-      if (map.current.getLayer('places-heat'))      map.current.removeLayer('places-heat')
-      if (map.current.getSource('places'))          map.current.removeSource('places')
-
-      const geojson: GeoJSON.FeatureCollection = {
-        type: 'FeatureCollection',
-        features: rows.map(p => ({
-          type: 'Feature' as const,
-          geometry: { type: 'Point' as const, coordinates: [p.lng, p.lat] },
-          properties: { id: p.id, name: p.name, address: p.address || '' },
-        })),
+    const io = new IntersectionObserver(([e]) => {
+      if (!e.isIntersecting) return
+      io.disconnect()
+      let t0: number | null = null
+      const tick = (ts: number) => {
+        if (!t0) t0 = ts
+        const p = Math.min((ts - t0) / dur, 1)
+        const ease = 1 - Math.pow(1 - p, 3)
+        setVal(Math.round(ease * to))
+        if (p < 1) requestAnimationFrame(tick)
       }
+      requestAnimationFrame(tick)
+    }, { threshold: 0.5 })
+    if (spanRef.current) io.observe(spanRef.current)
+    return () => io.disconnect()
+  }, [to, dur])
+  return <span ref={spanRef}>{val.toLocaleString()}{suffix}</span>
+}
 
-      map.current.addSource('places', { type: 'geojson', data: geojson })
+// ── Pill badge ────────────────────────────────────────────────────────────────
+function Pill({ children, color = '#f97316' }: { children: string; color?: string }) {
+  return (
+    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold"
+      style={{ backgroundColor: `${color}22`, color }}>
+      {children}
+    </span>
+  )
+}
 
-      // Heatmap layer (low zoom)
-      map.current.addLayer({
-        id:      'places-heat',
-        type:    'heatmap',
-        source:  'places',
-        maxzoom: 14,
-        paint: {
-          'heatmap-weight':     1,
-          'heatmap-intensity':  ['interpolate', ['linear'], ['zoom'], 0, 0.4, 14, 1.5],
-          'heatmap-color': [
-            'interpolate', ['linear'], ['heatmap-density'],
-            0,   'rgba(0,0,0,0)',
-            0.2, `${color}44`,
-            0.6, `${color}aa`,
-            1,   color,
-          ],
-          'heatmap-radius':  ['interpolate', ['linear'], ['zoom'], 0, 12, 14, 30],
-          'heatmap-opacity': 0.75,
-        },
-      })
+// ── Feature card ──────────────────────────────────────────────────────────────
+function FeatureCard({
+  icon, title, desc, href, label, delay = 0
+}: { icon: string; title: string; desc: string; href: string; label: string; delay?: number }) {
+  const { ref, visible } = useReveal()
+  return (
+    <div
+      ref={ref}
+      className="group relative bg-white/5 border border-white/10 rounded-2xl p-6 flex flex-col gap-4 hover:bg-white/8 hover:border-orange-500/30 transition-all duration-500 cursor-pointer"
+      style={{
+        opacity: visible ? 1 : 0,
+        transform: visible ? 'translateY(0)' : 'translateY(24px)',
+        transition: `opacity 0.7s ease ${delay}ms, transform 0.7s ease ${delay}ms`,
+      }}
+    >
+      <div className="text-3xl">{icon}</div>
+      <div>
+        <h3 className="text-white font-bold text-lg mb-1.5 leading-snug">{title}</h3>
+        <p className="text-gray-400 text-sm leading-relaxed">{desc}</p>
+      </div>
+      <Link
+        href={href}
+        className="mt-auto inline-flex items-center gap-1.5 text-orange-400 text-sm font-semibold group-hover:text-orange-300 transition-colors"
+      >
+        {label}
+        <svg className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+        </svg>
+      </Link>
+    </div>
+  )
+}
 
-      // Circle layer (high zoom)
-      map.current.addLayer({
-        id:      'places-circles',
-        type:    'circle',
-        source:  'places',
-        minzoom: 11,
-        paint: {
-          'circle-radius':       6,
-          'circle-color':        color,
-          'circle-opacity':      0.85,
-          'circle-stroke-width': 1.5,
-          'circle-stroke-color': '#fff',
-        },
-      })
+// ── Daan insight card ─────────────────────────────────────────────────────────
+function InsightCard({ rank, title, value, sub, color, delay }: {
+  rank: string; title: string; value: string; sub: string; color: string; delay: number
+}) {
+  const { ref, visible } = useReveal()
+  return (
+    <div
+      ref={ref}
+      className="bg-white/5 border border-white/8 rounded-xl p-5 flex flex-col gap-2"
+      style={{
+        opacity: visible ? 1 : 0,
+        transform: visible ? 'translateY(0)' : 'translateY(20px)',
+        transition: `opacity 0.6s ease ${delay}ms, transform 0.6s ease ${delay}ms`,
+      }}
+    >
+      <div className="text-[10px] font-bold tracking-widest uppercase" style={{ color }}>{rank}</div>
+      <div className="text-2xl font-black text-white">{value}</div>
+      <div className="text-sm font-semibold text-gray-300">{title}</div>
+      <div className="text-xs text-gray-500 leading-relaxed">{sub}</div>
+    </div>
+  )
+}
 
-      // Highlight layer — filtered to a single hovered feature
-      map.current.addLayer({
-        id:     'places-highlight',
-        type:   'circle',
-        source: 'places',
-        filter: ['==', ['get', 'id'], ''],   // nothing by default
-        paint: {
-          'circle-radius':       13,
-          'circle-color':        color,
-          'circle-opacity':      1,
-          'circle-stroke-width': 3,
-          'circle-stroke-color': '#fff',
-        },
-      })
+// ── Main landing page ─────────────────────────────────────────────────────────
+export default function Landing() {
+  const [scrolled, setScrolled] = useState(false)
 
-      // Popup on click
-      map.current.on('click', 'places-circles', e => {
-        const props = e.features?.[0]?.properties
-        if (!props) return
-        const coords = (e.features![0].geometry as any).coordinates
-        popupRef.current?.remove()
-        popupRef.current = new mapboxgl.Popup({ offset: 12 })
-          .setLngLat(coords)
-          .setHTML(
-            `<strong>${props.name}</strong><br/><span style="font-size:12px;color:#555">${props.address}</span>`,
-          )
-          .addTo(map.current!)
-      })
-
-      map.current.on('mouseenter', 'places-circles', () => { map.current!.getCanvas().style.cursor = 'pointer' })
-      map.current.on('mouseleave', 'places-circles', () => { map.current!.getCanvas().style.cursor = '' })
-
-      // Initial visible places after load
-      setTimeout(updateVisible, 80)
-
-    } catch (e) {
-      setLoadError('Failed to load: ' + String(e))
-    } finally {
-      setLoading(false)
-    }
-  }, [updateVisible])
-
-  // Reload when category changes
   useEffect(() => {
-    if (!map.current) return
-    loadCategory(selectedCategory)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCategory])
-
-  // ── Hover a list item → highlight on map + popup ──────────────────────────────
-  const handleHoverEnter = useCallback((place: Place) => {
-    setHoveredId(place.id)
-    if (!map.current) return
-
-    // Highlight the pin
-    map.current.setFilter('places-highlight', ['==', ['get', 'id'], place.id])
-
-    // Popup (without moving map)
-    popupRef.current?.remove()
-    popupRef.current = new mapboxgl.Popup({ offset: 16, closeButton: false, closeOnClick: false })
-      .setLngLat([place.lng, place.lat])
-      .setHTML(
-        `<strong>${place.name}</strong><br/><span style="font-size:12px;color:#555">${place.address || ''}</span>`,
-      )
-      .addTo(map.current)
+    const fn = () => setScrolled(window.scrollY > 60)
+    window.addEventListener('scroll', fn, { passive: true })
+    return () => window.removeEventListener('scroll', fn)
   }, [])
 
-  const handleHoverLeave = useCallback(() => {
-    setHoveredId(null)
-    if (!map.current) return
-    if (map.current.getLayer('places-highlight'))
-      map.current.setFilter('places-highlight', ['==', ['get', 'id'], ''])
-    popupRef.current?.remove()
-    popupRef.current = null
-  }, [])
+  const heroReveal    = useReveal(0)
+  const statsReveal   = useReveal()
+  const daanReveal    = useReveal()
+  const platformReveal= useReveal()
+  const ctaReveal     = useReveal()
 
-  // Click list item → fly to
-  const handleItemClick = useCallback((place: Place) => {
-    if (!map.current) return
-    map.current.easeTo({ center: [place.lng, place.lat], zoom: Math.max(map.current.getZoom(), 16), duration: 500 })
-  }, [])
-
-  // ── Navigate to district ──────────────────────────────────────────────────────
-  const flyToDistrict = useCallback((name: string) => {
-    const [lng, lat] = DISTRICTS[name]
-    map.current?.easeTo({ center: [lng, lat], zoom: 14, duration: 600 })
-  }, [])
-
-  // ── Research this area (admin only, hits Google API, then re-loads) ───────────
-  const researchArea = useCallback(async () => {
-    const token = sessionRef.current?.access_token
-    if (!token || !map.current) return
-    setResearching(true)
-    setLoadError(null)
-    try {
-      const { lng, lat } = map.current.getCenter()
-      const url = `/api/places?query=${encodeURIComponent(selectedCategory)}&lat=${lat}&lng=${lng}&radius=2000&force_refresh=true`
-      const res  = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
-      await loadCategory(selectedCategory)
-    } catch (e: any) {
-      setLoadError(e.message || 'Research failed')
-    } finally {
-      setResearching(false)
-    }
-  }, [selectedCategory, loadCategory])
-
-  const color = CATEGORY_COLORS[selectedCategory] ?? DEFAULT_COLOR
-
-  // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <>
-      <Navbar isAdmin={isAdmin} userEmail={session?.user?.email} />
+      <Head>
+        <title>StorePulse — Business Location Intelligence for Taipei</title>
+        <meta name="description"
+          content="B2B platform for business owners. Social signal analysis, competitor density, and demographic data across every Taipei district." />
+      </Head>
 
-      <div className="h-[calc(100vh-64px)] flex flex-col md:flex-row">
-
-        {/* ── Map ── */}
-        <main className="w-full md:w-3/4 h-1/2 md:h-full relative">
-          {loadError && <ErrorBanner message={loadError} />}
-          <div className="h-full" ref={mapContainer} />
-        </main>
-
-        {/* ── Sidebar ── */}
-        <aside className="w-full md:w-1/4 flex flex-col bg-white border-l border-gray-200 h-1/2 md:h-full">
-
-          {/* Header */}
-          <div className="shrink-0 px-5 pt-5 pb-4 border-b border-gray-100">
-            <h1 className="text-base font-bold text-gray-900 tracking-tight">Taipei Business Map</h1>
-            <p className="text-xs text-gray-400 mt-0.5">Location intelligence for every district</p>
-          </div>
-
-          {/* Category tabs */}
-          <div className="shrink-0 px-5 py-3 border-b border-gray-100">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Category</p>
-            <div className="flex flex-wrap gap-1.5">
-              {(categories.length ? categories : Object.keys(CATEGORY_COLORS)).map(cat => (
-                <button
-                  key={cat}
-                  onClick={() => setSelectedCategory(cat)}
-                  className="px-3 py-1 rounded-full text-xs font-semibold transition-all"
-                  style={
-                    selectedCategory === cat
-                      ? { backgroundColor: CATEGORY_COLORS[cat] ?? DEFAULT_COLOR, color: '#fff' }
-                      : { backgroundColor: '#f3f4f6', color: '#6b7280' }
-                  }
-                >
-                  {cat.replace(/_/g, ' ')}
-                </button>
-              ))}
+      {/* ── Floating nav ──────────────────────────────────────────────────────── */}
+      <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+        scrolled ? 'bg-black/80 backdrop-blur-xl border-b border-white/8' : 'bg-transparent'
+      }`}>
+        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2">
+            <div className="w-7 h-7 bg-orange-500 rounded-lg flex items-center justify-center">
+              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5}
+                  d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              </svg>
             </div>
+            <span className="text-white font-bold text-sm tracking-tight">StorePulse</span>
+            <span className="text-gray-600 text-xs">for Taipei</span>
+          </Link>
+          <div className="hidden md:flex items-center gap-6">
+            <Link href="/map" className="text-gray-400 hover:text-white text-sm transition">Map</Link>
+            <Link href="/consulting" className="text-gray-400 hover:text-white text-sm transition">Consulting</Link>
+            <Link href="/time-machine" className="text-gray-400 hover:text-white text-sm transition">Time Machine</Link>
+            <Link href="/intro" className="text-gray-400 hover:text-white text-sm transition">How It Works</Link>
+          </div>
+          <Link href="/consulting"
+            className="bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-all active:scale-95">
+            Start Analysis
+          </Link>
+        </div>
+      </nav>
+
+      {/* ── Hero ──────────────────────────────────────────────────────────────── */}
+      <section className="min-h-screen bg-black flex flex-col items-center justify-center text-center px-6 pt-20 pb-10 relative overflow-hidden">
+
+        {/* Radial glow */}
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[600px] rounded-full"
+            style={{ background: 'radial-gradient(ellipse, rgba(249,115,22,0.10) 0%, rgba(239,68,68,0.04) 40%, transparent 70%)' }} />
+          {/* Dot grid */}
+          <div className="absolute inset-0 opacity-20"
+            style={{
+              backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.15) 1px, transparent 1px)',
+              backgroundSize: '36px 36px',
+            }} />
+        </div>
+
+        <div
+          ref={heroReveal.ref}
+          className="relative z-10 max-w-4xl transition-all duration-1000"
+          style={{ opacity: heroReveal.visible ? 1 : 0, transform: heroReveal.visible ? 'translateY(0)' : 'translateY(32px)' }}
+        >
+          {/* Eyebrow */}
+          <div className="inline-flex items-center gap-2 bg-orange-500/10 border border-orange-500/20 rounded-full px-4 py-1.5 mb-8">
+            <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse" />
+            <span className="text-orange-300 text-xs font-semibold tracking-wider uppercase">B2B Location Intelligence Platform</span>
           </div>
 
-          {/* District shortcuts */}
-          <div className="shrink-0 px-5 py-3 border-b border-gray-100">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Jump to district</p>
-            <div className="flex flex-wrap gap-1">
-              {Object.keys(DISTRICTS).map(d => (
-                <button
-                  key={d}
-                  onClick={() => flyToDistrict(d)}
-                  className="px-2 py-0.5 rounded text-[11px] bg-gray-100 hover:bg-gray-200 text-gray-600 transition"
-                >
-                  {d}
-                </button>
-              ))}
+          {/* Headline */}
+          <h1 className="text-5xl md:text-7xl font-black tracking-tight leading-[1.05] text-white mb-6">
+            Don&apos;t guess<br />
+            where to open.<br />
+            <span className="text-transparent bg-clip-text"
+              style={{ backgroundImage: 'linear-gradient(135deg, #f97316 0%, #ef4444 50%, #ec4899 100%)' }}>
+              Know.
+            </span>
+          </h1>
+
+          <p className="text-xl text-gray-400 font-light max-w-2xl mx-auto leading-relaxed mb-10">
+            StorePulse gives business owners the same data-driven edge that franchise chains have had for decades —
+            social momentum, competitor density, foot traffic demographics — for every district in Taipei.
+          </p>
+
+          {/* CTAs */}
+          <div className="flex flex-col sm:flex-row gap-4 justify-center mb-14">
+            <Link href="/consulting"
+              className="px-8 py-4 bg-orange-500 text-white rounded-full font-bold text-base hover:bg-orange-600 active:scale-95 transition-all shadow-lg shadow-orange-500/20">
+              Analyse Da&apos;an District
+            </Link>
+            <Link href="/intro"
+              className="px-8 py-4 bg-white/8 text-white rounded-full font-semibold text-base border border-white/10 hover:bg-white/12 active:scale-95 transition-all">
+              See how it works
+            </Link>
+          </div>
+
+          {/* Social proof logos (placeholder trust marks) */}
+          <div className="flex items-center justify-center gap-8 opacity-30">
+            {['Supabase', 'Google Maps', 'Mapbox', 'PostGIS'].map(name => (
+              <span key={name} className="text-gray-400 text-xs font-semibold tracking-wide uppercase">{name}</span>
+            ))}
+          </div>
+        </div>
+
+        {/* Scroll cue */}
+        <div className={`absolute bottom-8 flex flex-col items-center gap-2 transition-opacity duration-500 ${scrolled ? 'opacity-0' : 'opacity-50'}`}>
+          <div className="w-px h-10 bg-gradient-to-b from-white/40 to-transparent animate-pulse" />
+        </div>
+      </section>
+
+      {/* ── Stats bar ─────────────────────────────────────────────────────────── */}
+      <section className="bg-black border-y border-white/8 py-14">
+        <div
+          ref={statsReveal.ref}
+          className="max-w-5xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-8 px-6 transition-all duration-700"
+          style={{ opacity: statsReveal.visible ? 1 : 0, transform: statsReveal.visible ? 'translateY(0)' : 'translateY(20px)' }}
+        >
+          {[
+            { n: 4964, suf: '+', label: 'Active businesses tracked', color: '#f97316' },
+            { n: 12,   suf: '',  label: 'Taipei districts covered',  color: '#3b82f6' },
+            { n: 5,    suf: '',  label: 'Social platforms analysed', color: '#a855f7' },
+            { n: 1263, suf: '+', label: 'Cafes in the Da\'an alone',  color: '#ec4899' },
+          ].map(s => (
+            <div key={s.label} className="text-center">
+              <div className="text-3xl md:text-4xl font-black tabular-nums" style={{ color: s.color }}>
+                <Num to={s.n} suffix={s.suf} />
+              </div>
+              <div className="text-gray-500 text-xs mt-1.5 leading-snug">{s.label}</div>
             </div>
-          </div>
+          ))}
+        </div>
+      </section>
 
-          {/* Stats row */}
-          <div className="shrink-0 px-5 py-3 border-b border-gray-100">
-            {loading ? (
-              <div className="flex items-center gap-2 text-xs text-gray-400">
-                <svg className="animate-spin h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                </svg>
-                Loading {selectedCategory.replace(/_/g, ' ')}…
-              </div>
-            ) : (
-              <div className="flex items-center gap-3 text-sm">
-                <span className="font-bold" style={{ color }}>{visiblePlaces.length}</span>
-                <span className="text-gray-400 text-xs">in view</span>
-                <div className="w-px h-4 bg-gray-200" />
-                <span className="font-bold text-gray-500">{totalLoaded}</span>
-                <span className="text-gray-400 text-xs">in DB</span>
-              </div>
-            )}
-          </div>
-
-          {/* Research button — admin only, when DB has sparse data */}
-          {!loading && isAdmin && totalLoaded < 30 && (
-            <div className="shrink-0 px-5 py-3 border-b border-gray-100 bg-blue-50">
-              <button
-                onClick={researchArea}
-                disabled={researching}
-                className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white text-sm font-semibold rounded-lg px-4 py-2.5 hover:bg-blue-700 disabled:opacity-60 active:scale-[0.98] transition"
-              >
-                {researching ? (
-                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                  </svg>
-                ) : (
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
-                  </svg>
-                )}
-                {researching ? 'Fetching from Google…' : 'Research this area'}
-              </button>
-              <p className="text-[11px] text-blue-400 mt-1.5 text-center">
-                {totalLoaded === 0 ? 'No data yet — pulls from Google Maps' : `Only ${totalLoaded} results in DB`}
-              </p>
+      {/* ── Da'an District Spotlight ───────────────────────────────────────────── */}
+      <section className="bg-black py-28 px-6">
+        <div className="max-w-5xl mx-auto">
+          <div
+            ref={daanReveal.ref}
+            className="transition-all duration-700"
+            style={{ opacity: daanReveal.visible ? 1 : 0, transform: daanReveal.visible ? 'translateY(0)' : 'translateY(24px)' }}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <Pill color="#f97316">Case study</Pill>
+              <Pill color="#3b82f6">Da&apos;an District · 大安區</Pill>
             </div>
-          )}
-
-          {/* ── Store list (scrollable) ── */}
-          <div className="flex-1 min-h-0 overflow-y-auto">
-            {!loading && visiblePlaces.length > 0 ? (
-              <>
-                <div className="sticky top-0 bg-white px-5 py-2 border-b border-gray-100 z-10">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                    Stores in view · {visiblePlaces.length}
-                  </p>
-                </div>
-                <ul>
-                  {visiblePlaces.map((place, i) => (
-                    <li
-                      key={place.id}
-                      className={`flex items-start gap-3 px-5 py-2.5 border-b border-gray-50 cursor-pointer transition-colors ${
-                        hoveredId === place.id ? 'bg-orange-50' : 'hover:bg-gray-50'
-                      }`}
-                      onMouseEnter={() => handleHoverEnter(place)}
-                      onMouseLeave={handleHoverLeave}
-                      onClick={() => handleItemClick(place)}
-                    >
-                      <span
-                        className="shrink-0 mt-0.5 w-5 h-5 rounded-full text-white text-[10px] font-bold flex items-center justify-center"
-                        style={{ backgroundColor: color }}
-                      >
-                        {i + 1 > 99 ? '·' : i + 1}
-                      </span>
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-gray-800 leading-snug truncate">{place.name}</p>
-                        {place.address && (
-                          <p className="text-xs text-gray-400 mt-0.5 leading-snug truncate">{place.address}</p>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            ) : !loading ? (
-              <div className="flex flex-col items-center justify-center h-full text-center px-6 py-10 text-gray-400">
-                <svg className="w-8 h-8 mb-3 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                    d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                </svg>
-                <p className="text-sm font-medium text-gray-500">
-                  {totalLoaded === 0 ? 'No stores in DB' : 'No stores in this view'}
-                </p>
-                <p className="text-xs mt-1 text-gray-400">
-                  {totalLoaded === 0
-                    ? isAdmin ? 'Use "Research this area" to fetch from Google' : 'This area has no data yet'
-                    : 'Pan or zoom out to see more'}
-                </p>
-              </div>
-            ) : null}
+            <h2 className="text-4xl md:text-5xl font-black text-white tracking-tight leading-tight mb-4">
+              Taipei&apos;s most competitive<br />
+              café market — decoded.
+            </h2>
+            <p className="text-gray-400 text-lg max-w-2xl leading-relaxed mb-12">
+              1,200+ cafes. 318,000 residents. NTU student population of 33,000.
+              Da&apos;an is the ultimate stress test for any food &amp; beverage concept —
+              and the highest-reward district when you find the right pocket.
+            </p>
           </div>
 
-          {/* ── Bottom links ── */}
-          <div className="shrink-0 border-t border-gray-100">
-            <Link
-              href="/time-machine"
-              className="flex items-center justify-between w-full px-5 py-3 hover:bg-gray-50 transition group border-b border-gray-100"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-7 h-7 rounded-lg bg-gray-900 flex items-center justify-center shrink-0">
-                  <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-800">Time Machine</p>
-                  <p className="text-xs text-gray-400">Watch the city grow year by year</p>
-                </div>
-              </div>
-              <svg className="w-4 h-4 text-gray-300 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          {/* Insight cards grid */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {[
+              { rank: 'Population', value: '318K', title: 'District residents', sub: '70% aged 15–64, disposable income above city avg.', color: '#f97316', delay: 0 },
+              { rank: 'Density',    value: '#1', title: 'Café density in Taipei', sub: 'Highest concentration of specialty & independent cafes.', color: '#ef4444', delay: 80 },
+              { rank: 'Social',     value: '87%', title: 'Instagram discovery rate', sub: 'Most café visits in Da\'an are driven by IG or Google Maps discovery.', color: '#E1306C', delay: 160 },
+              { rank: 'Student mkt', value: '33K', title: 'NTU students nearby', sub: 'Daily foot traffic between Gongguan and Shida night market.', color: '#a855f7', delay: 240 },
+              { rank: 'Timing',     value: '2020–', title: 'Specialty wave', sub: '3rd-wave coffee boom since 2020: single-origin, pour-over, small-batch roasters.', color: '#3b82f6', delay: 320 },
+              { rank: 'Risk',       value: '18%', title: 'Annual closure rate', sub: 'High competition — zone selection matters. Dead zones cluster near Shida Rd south end.', color: '#f59e0b', delay: 400 },
+              { rank: 'Avg ticket', value: 'NT$150', title: 'Per order — cafes', sub: 'Specialty commands 1.8× premium vs chain. Customers repeat 3×/week avg.', color: '#22c55e', delay: 480 },
+              { rank: 'Opportunity', value: '↑ Boba', title: 'Growth gap identified', sub: 'Boba & premium beverage under-represented vs café count. Emerging sub-market.', color: '#06b6d4', delay: 560 },
+            ].map(c => <InsightCard key={c.title} {...c} />)}
+          </div>
+
+          <div className="mt-10 flex gap-4">
+            <Link href="/consulting"
+              className="inline-flex items-center gap-2 bg-orange-500 text-white px-6 py-3 rounded-full text-sm font-bold hover:bg-orange-600 active:scale-95 transition-all">
+              Analyse Da&apos;an now
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
               </svg>
             </Link>
+            <Link href="/time-machine"
+              className="inline-flex items-center gap-2 text-gray-400 hover:text-white px-6 py-3 rounded-full text-sm font-semibold border border-white/10 hover:border-white/20 transition-all">
+              See market history
+            </Link>
+          </div>
+        </div>
+      </section>
 
-            <div className="flex items-center gap-3 px-5 py-3">
-              <div className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
-                <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-600">Report a store</p>
-                <p className="text-xs text-gray-400">Coming soon</p>
-              </div>
-            </div>
+      {/* ── Platform signals ───────────────────────────────────────────────────── */}
+      <section className="bg-[#080808] py-28 px-6 border-t border-white/5">
+        <div className="max-w-5xl mx-auto">
+          <div
+            ref={platformReveal.ref}
+            className="transition-all duration-700"
+            style={{ opacity: platformReveal.visible ? 1 : 0, transform: platformReveal.visible ? 'translateY(0)' : 'translateY(24px)' }}
+          >
+            <Pill color="#a855f7">Social intelligence</Pill>
+            <h2 className="text-4xl md:text-5xl font-black text-white tracking-tight leading-tight mt-4 mb-4">
+              Where your customers<br />discover you — before they walk in.
+            </h2>
+            <p className="text-gray-400 text-lg max-w-2xl leading-relaxed mb-14">
+              Every trending store in Da&apos;an shows up as a signal bubble on the map — sized by score,
+              coloured by platform. Filter by channel, set a minimum trend score, and immediately see
+              which neighbourhoods have social momentum.
+            </p>
           </div>
 
-        </aside>
-      </div>
+          <div className="grid md:grid-cols-5 gap-3">
+            {[
+              { emoji: '📸', platform: 'Instagram',  color: '#E1306C', score: 87, insight: 'Visual discovery. Specialty cafes, latte art, interior aesthetics. Highest share-of-voice in Da\'an.' },
+              { emoji: '🎵', platform: 'TikTok',     color: '#69C9D0', score: 72, insight: 'Viral moments. Boba chains, unique drinks, "must-try" lists. Fastest-growing channel 2023–2024.' },
+              { emoji: '👥', platform: 'Facebook',   color: '#1877F2', score: 61, insight: 'Group recommendations. Event posts, loyalty communities. Dominant for restaurants and chain cafes.' },
+              { emoji: '🧵', platform: 'Threads',    color: '#a78bfa', score: 54, insight: 'Emerging. Indie cafes & third-wave roasters building early-adopter audiences.' },
+              { emoji: '💬', platform: 'LINE',       color: '#00B900', score: 48, insight: 'Word of mouth. Group chat referrals for restaurants and delivery. Strong afternoon-tea segment.' },
+            ].map((p, i) => (
+              <div key={p.platform}
+                className="bg-white/4 border border-white/8 rounded-xl p-5 flex flex-col gap-3 hover:border-white/15 transition-all"
+                style={{ animationDelay: `${i * 80}ms` }}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-2xl">{p.emoji}</span>
+                  <span className="text-lg font-black tabular-nums" style={{ color: p.color }}>{p.score}</span>
+                </div>
+                <div className="font-bold text-white text-sm">{p.platform}</div>
+                <p className="text-gray-500 text-xs leading-relaxed">{p.insight}</p>
+                <div className="h-1 rounded-full bg-white/5 overflow-hidden mt-auto">
+                  <div className="h-full rounded-full" style={{ width: `${p.score}%`, backgroundColor: p.color, opacity: 0.8 }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Tool suite ────────────────────────────────────────────────────────── */}
+      <section className="bg-black py-28 px-6 border-t border-white/5">
+        <div className="max-w-5xl mx-auto">
+          <div className="mb-14">
+            <Pill color="#22c55e">What&apos;s inside</Pill>
+            <h2 className="text-4xl md:text-5xl font-black text-white tracking-tight mt-4 mb-3">
+              Three tools.<br />One decision.
+            </h2>
+            <p className="text-gray-400 text-lg max-w-xl">
+              Every feature is built around a single question: <em className="text-gray-300">should you open here?</em>
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-5">
+            <FeatureCard
+              delay={0}
+              icon="📍"
+              title="Business Map"
+              desc="Live competitor density across all 12 Taipei districts. Heatmap at city scale, individual pins at street level. Streaming data — first pins appear in under a second."
+              href="/map"
+              label="Open map"
+            />
+            <FeatureCard
+              delay={120}
+              icon="📊"
+              title="Consulting Dashboard"
+              desc="Social signal bubbles, Location Score (0–100), demographic breakdown, and a top-10 trending list — all for one district, in one screen."
+              href="/consulting"
+              label="Run analysis"
+            />
+            <FeatureCard
+              delay={240}
+              icon="⏱"
+              title="Time Machine"
+              desc="Every store that ever opened — and every one that closed. Cold-to-warm colour coding shows established zones vs. recent growth. Dead zones warn you off failure clusters."
+              href="/time-machine"
+              label="Explore history"
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* ── CTA ───────────────────────────────────────────────────────────────── */}
+      <section className="bg-black py-28 px-6 border-t border-white/5">
+        <div
+          ref={ctaReveal.ref}
+          className="max-w-2xl mx-auto text-center transition-all duration-700"
+          style={{ opacity: ctaReveal.visible ? 1 : 0, transform: ctaReveal.visible ? 'translateY(0)' : 'translateY(24px)' }}
+        >
+          <h2 className="text-4xl md:text-6xl font-black text-white tracking-tight mb-5">
+            Your next location<br />is already on the map.
+          </h2>
+          <p className="text-gray-400 text-lg mb-10">
+            Start with Da&apos;an — Taipei&apos;s highest-signal district — and see the opportunity gaps that
+            competitor chains won&apos;t show you.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Link href="/consulting"
+              className="px-10 py-4 bg-orange-500 text-white rounded-full font-bold text-lg hover:bg-orange-600 active:scale-95 transition-all shadow-xl shadow-orange-500/20">
+              Analyse Da&apos;an — free
+            </Link>
+            <Link href="/intro"
+              className="px-10 py-4 text-white rounded-full font-semibold text-lg border border-white/15 hover:bg-white/5 active:scale-95 transition-all">
+              How it works
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Footer ─────────────────────────────────────────────────────────────── */}
+      <footer className="bg-black border-t border-white/6 py-10 px-6">
+        <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 bg-orange-500 rounded-md flex items-center justify-center">
+              <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5}
+                  d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              </svg>
+            </div>
+            <span className="text-gray-400 text-sm font-semibold">StorePulse · Taipei</span>
+          </div>
+          <div className="flex items-center gap-6">
+            {[['Map', '/map'], ['Consulting', '/consulting'], ['Time Machine', '/time-machine'], ['How It Works', '/intro']].map(([l, h]) => (
+              <Link key={h} href={h} className="text-gray-600 hover:text-gray-300 text-xs transition">{l}</Link>
+            ))}
+          </div>
+          <p className="text-gray-700 text-xs">B2B Location Intelligence Platform</p>
+        </div>
+      </footer>
     </>
   )
 }

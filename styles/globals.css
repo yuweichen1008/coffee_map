@@ -4,3 +4,8 @@
 
 html,body,#__next{height:100%;}
 body{background:#f8fafc}
+
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}

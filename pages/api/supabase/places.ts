@@ -2,17 +2,23 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { supabase } from '@/lib/supabaseClient'
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const { category, include_closed } = req.query as {
+  const { category, include_closed, offset, limit } = req.query as {
     category?:       string
-    include_closed?: string   // 'true' → return active + closed; default active only
+    include_closed?: string
+    offset?:         string
+    limit?:          string
   }
 
-  if (!supabase) return res.status(200).json({ results: [] })
+  if (!supabase) return res.status(200).json({ results: [], hasMore: false })
+
+  const pageSize   = Math.min(parseInt(limit  ?? '500') || 500, 1000)
+  const pageOffset = Math.max(parseInt(offset ?? '0')   || 0,   0)
 
   try {
     let query = supabase
       .from('places')
       .select('id,name,address,lat,lng,category,district,founded_date,closed_date,status')
+      .range(pageOffset, pageOffset + pageSize - 1)
 
     if (include_closed !== 'true') {
       // Default: exclude explicitly closed stores (home page, etc.)
@@ -23,11 +29,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (category) query = query.eq('category', category)
 
-    const { data, error } = await query.limit(8000)
+    const { data, error } = await query
     if (error) throw error
-    return res.status(200).json({ results: data })
+    return res.status(200).json({
+      results: data ?? [],
+      hasMore: (data?.length ?? 0) === pageSize,
+    })
   } catch (e) {
     console.error('Supabase places fetch failed', e)
-    return res.status(200).json({ results: [] })
+    return res.status(200).json({ results: [], hasMore: false })
   }
 }
