@@ -1,15 +1,17 @@
 import Link from 'next/link';
 import { useState } from 'react';
 
-const taipeiDistricts = [
-  'Da\'an', 'Xinyi', 'Wanhua', 'Datong', 'Zhongzheng', 'Songshan',
-  'Zhongshan', 'Neihu', 'Wenshan', 'Nangang', 'Shilin', 'Beitou'
+const sgDistricts = [
+  'Orchard', 'Marina Bay', 'Tanjong Pagar', 'Chinatown', 'Bugis',
+  'Novena', 'Queenstown', 'Toa Payoh', 'Bishan', 'Tampines',
+  'Jurong East', 'Woodlands', 'Sengkang', 'Punggol', 'Ang Mo Kio',
+  'Bedok', 'Clementi', 'Yishun', 'Serangoon'
 ];
 
-const storeTypes = ['cafe', 'grocery store', 'beverage store', 'boba'];
+const storeTypes = ['cafe', 'hawker', 'convenience store', 'supermarket', 'pharmacy', 'gym', 'coworking', 'beverage store'];
 
 export default function RequestPage() {
-  const [selectedDistrict, setSelectedDistrict] = useState(taipeiDistricts[0]);
+  const [selectedDistrict, setSelectedDistrict] = useState(sgDistricts[0]);
   const [selectedStoreType, setSelectedStoreType] = useState(storeTypes[0]);
   const [result, setResult] = useState<{ profit: string, successRate: string } | null>(null);
 
@@ -43,7 +45,7 @@ export default function RequestPage() {
               onChange={(e) => setSelectedDistrict(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              {taipeiDistricts.map((district) => (
+              {sgDistricts.map((district) => (
                 <option key={district} value={district}>
                   {district}
                 </option>

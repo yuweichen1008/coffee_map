@@ -99,18 +99,77 @@ TAIPEI_DISTRICTS = {
     'Beitou':     {'lat': 25.1167,   'lng': 121.5000,   'name_zh': '北投區', 'half_km': 3.0},
 }
 
+# Singapore planning areas — 3 regions (CCR / RCR / OCR) covering the whole island.
+# half_km controls the 3×3 search grid size; OCR estates are larger so use bigger cells.
+SINGAPORE_DISTRICTS = {
+    # ── Core Central Region (CCR) ──────────────────────────
+    'Orchard':       {'lat': 1.3048,  'lng': 103.8318, 'half_km': 1.5},
+    'Marina_Bay':    {'lat': 1.2847,  'lng': 103.8610, 'half_km': 1.5},
+    'Tanjong_Pagar': {'lat': 1.2763,  'lng': 103.8468, 'half_km': 1.2},
+    'Chinatown':     {'lat': 1.2838,  'lng': 103.8447, 'half_km': 1.0},
+    'Bugis':         {'lat': 1.3005,  'lng': 103.8568, 'half_km': 1.2},
+    # ── Rest of Central Region (RCR) ──────────────────────
+    'Novena':        {'lat': 1.3200,  'lng': 103.8437, 'half_km': 1.3},
+    'Queenstown':    {'lat': 1.2952,  'lng': 103.7860, 'half_km': 1.5},
+    'Toa_Payoh':     {'lat': 1.3327,  'lng': 103.8468, 'half_km': 1.3},
+    'Bishan':        {'lat': 1.3501,  'lng': 103.8480, 'half_km': 1.5},
+    # ── Outside Central Region (OCR) — residential heartland
+    'Tampines':      {'lat': 1.3540,  'lng': 103.9455, 'half_km': 2.5},
+    'Jurong_East':   {'lat': 1.3329,  'lng': 103.7436, 'half_km': 2.0},
+    'Woodlands':     {'lat': 1.4371,  'lng': 103.7861, 'half_km': 2.5},
+    'Sengkang':      {'lat': 1.3910,  'lng': 103.8945, 'half_km': 2.0},
+    'Punggol':       {'lat': 1.4044,  'lng': 103.9021, 'half_km': 2.0},
+    'Ang_Mo_Kio':    {'lat': 1.3690,  'lng': 103.8454, 'half_km': 2.0},
+    'Bedok':         {'lat': 1.3236,  'lng': 103.9273, 'half_km': 2.0},
+    'Clementi':      {'lat': 1.3150,  'lng': 103.7653, 'half_km': 1.5},
+    'Yishun':        {'lat': 1.4299,  'lng': 103.8362, 'half_km': 2.5},
+    'Serangoon':     {'lat': 1.3554,  'lng': 103.8679, 'half_km': 1.5},
+}
+
 CATEGORY_MAP = {
+    # ── F&B ──────────────────────────────────────────────────
     'coffee shop':       'cafe',
     'coffee_shop':       'cafe',
     'cafe':              'cafe',
-    'convenience store': 'convenience_store',
-    'convenience_store': 'convenience_store',
-    'grocery':           'grocery',
-    'grocery store':     'grocery',
     'restaurant':        'restaurant',
     'bakery':            'bakery',
     'beverage store':    'beverage_store',
     'beverage_store':    'beverage_store',
+    'boba':              'beverage_store',
+    'bubble tea':        'beverage_store',
+    'hawker centre':     'hawker',
+    'hawker center':     'hawker',
+    'hawker':            'hawker',
+    'food court':        'hawker',
+    'kopitiam':          'hawker',
+    # ── Retail ───────────────────────────────────────────────
+    'convenience store': 'convenience_store',
+    'convenience_store': 'convenience_store',
+    'grocery':           'grocery',
+    'grocery store':     'grocery',
+    'supermarket':       'supermarket',
+    # ── Health ───────────────────────────────────────────────
+    'pharmacy':          'pharmacy',
+    'drugstore':         'pharmacy',
+    'guardian':          'pharmacy',
+    'watsons':           'pharmacy',
+    # ── Services ─────────────────────────────────────────────
+    'gym':               'gym',
+    'fitness':           'gym',
+    'fitness center':    'gym',
+    'coworking':         'coworking',
+    'co-working':        'coworking',
+    'coworking space':   'coworking',
+    'childcare':         'childcare',
+    'child care':        'childcare',
+    'enrichment':        'childcare',
+    'laundromat':        'laundromat',
+    'laundry':           'laundromat',
+    # ── Malls ────────────────────────────────────────────────
+    'shopping mall':     'shopping_mall',
+    'shopping center':   'shopping_mall',
+    'shopping centre':   'shopping_mall',
+    'mall':              'shopping_mall',
 }
 
 MAX_PAGES   = 3
@@ -205,15 +264,19 @@ def upsert_batch(places: list[dict]) -> int:
 
 # ── Main scrape ───────────────────────────────────────────────────────────────
 
-def scrape(keyword: str, dry_run: bool, skip_closed: bool) -> None:
+def scrape(keyword: str, dry_run: bool, skip_closed: bool,
+           districts=None) -> None:
+    if districts is None:
+        districts = TAIPEI_DISTRICTS
     seen_ids: set[str] = set()
     all_places: list[dict] = []
     dead_count = 0
     dup_count  = 0
     category   = CATEGORY_MAP.get(keyword.lower(), keyword.replace(' ', '_'))
 
-    for district_name, info in TAIPEI_DISTRICTS.items():
-        print(f"\nSearching {district_name} ({info['name_zh']}) "
+    for district_name, info in districts.items():
+        label = info.get('name_zh') or district_name.replace('_', ' ')
+        print(f"\nSearching {district_name} ({label}) "
               f"[{GRID_SIZE}×{GRID_SIZE} grid, half_km={info['half_km']}]…")
 
         cells = build_grid(info['lat'], info['lng'], info['half_km'])
@@ -303,23 +366,37 @@ def scrape(keyword: str, dry_run: bool, skip_closed: bool) -> None:
 # ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Stage 1: scrape Taipei places (active + closed) from Google Maps into Supabase"
+        description="Stage 1: scrape places (active + closed) from Google Maps into Supabase"
     )
-    parser.add_argument('--category',     default='coffee shop',
+    parser.add_argument('--category',    default='coffee shop',
                         help='Store type keyword (default: "coffee shop")')
-    parser.add_argument('--dry-run',      action='store_true',
+    parser.add_argument('--city',        default='taipei',
+                        choices=['taipei', 'singapore', 'all'],
+                        help='City to scrape: taipei | singapore | all (default: taipei)')
+    parser.add_argument('--dry-run',     action='store_true',
                         help='Print results without writing to Supabase')
-    parser.add_argument('--skip-closed',  action='store_true',
+    parser.add_argument('--skip-closed', action='store_true',
                         help='Omit permanently-closed places (not recommended; removes dead-zone data)')
     args = parser.parse_args()
 
+    if args.city == 'singapore':
+        districts = SINGAPORE_DISTRICTS
+        city_label = 'Singapore'
+    elif args.city == 'all':
+        districts  = {**TAIPEI_DISTRICTS, **SINGAPORE_DISTRICTS}
+        city_label = 'Taipei + Singapore'
+    else:
+        districts  = TAIPEI_DISTRICTS
+        city_label = 'Taipei'
+
     print("=" * 60)
-    print("TAIPEI PLACES SCRAPER  —  Stage 1 of 2")
+    print(f"PLACES SCRAPER  —  Stage 1  ({city_label})")
     print(f"Keyword      : {args.category}")
     print(f"Grid per dist: {GRID_SIZE}×{GRID_SIZE}  ({GRID_SIZE ** 2} cells)")
-    print(f"Districts    : {len(TAIPEI_DISTRICTS)}")
+    print(f"Districts    : {len(districts)}")
     print(f"Include closed: {'NO (--skip-closed)' if args.skip_closed else 'YES (dead-zone data)'}")
     print(f"Dry run      : {args.dry_run}")
     print("=" * 60)
 
-    scrape(keyword=args.category, dry_run=args.dry_run, skip_closed=args.skip_closed)
+    scrape(keyword=args.category, dry_run=args.dry_run,
+           skip_closed=args.skip_closed, districts=districts)

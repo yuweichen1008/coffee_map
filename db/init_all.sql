@@ -227,12 +227,25 @@ CREATE TABLE IF NOT EXISTS public.user_points (
 -- Seed data — categories
 -- ============================================================
 INSERT INTO public.categories (name, display_name, group_name, description) VALUES
-  ('cafe',               'Coffee Shop',       'f_and_b',  'Cafes and specialty coffee shops'),
-  ('convenience_store',  'Convenience Store', 'retail',   '7-Eleven, FamilyMart, Hi-Life, etc.'),
-  ('grocery',            'Grocery Store',     'retail',   'Supermarkets and traditional markets'),
-  ('restaurant',         'Restaurant',        'f_and_b',  'Dine-in restaurants of all cuisines'),
-  ('bakery',             'Bakery',            'f_and_b',  'Bread, pastry, and dessert shops'),
-  ('beverage_store',     'Beverage Store',    'f_and_b',  'Boba, juice bars, and drink stands')
+  -- F&B
+  ('cafe',               'Coffee Shop',        'f_and_b',  'Cafes and specialty coffee shops'),
+  ('convenience_store',  'Convenience Store',  'retail',   '7-Eleven, FamilyMart, Hi-Life, Cheers, etc.'),
+  ('grocery',            'Grocery Store',       'retail',   'Supermarkets and traditional markets'),
+  ('restaurant',         'Restaurant',          'f_and_b',  'Dine-in restaurants of all cuisines'),
+  ('bakery',             'Bakery',              'f_and_b',  'Bread, pastry, and dessert shops'),
+  ('beverage_store',     'Beverage Store',      'f_and_b',  'Boba, juice bars, bubble tea, drink stands'),
+  ('hawker',             'Hawker / Food Court', 'f_and_b',  'Hawker centres, food courts, kopitiam (SG)'),
+  -- Retail
+  ('supermarket',        'Supermarket',         'retail',   'NTUC FairPrice, Cold Storage, Sheng Siong, Jason''s'),
+  -- Health
+  ('pharmacy',           'Pharmacy',            'health',   'Guardian, Watsons, Unity, independent pharmacies'),
+  -- Services
+  ('gym',                'Gym / Fitness',       'services', 'Fitness First, Pure Fitness, boutique studios'),
+  ('coworking',          'Co-working Space',    'services', 'WeWork, JustCo, The Great Room, indie spaces'),
+  ('childcare',          'Childcare / Tuition', 'services', 'MindChamps, Heguru, enrichment centres'),
+  ('laundromat',         'Laundromat',          'services', 'Coin-op laundry, dry cleaning'),
+  -- Retail anchors
+  ('shopping_mall',      'Shopping Mall',       'retail',   'Orchard Road malls, suburban malls, heartland malls')
 ON CONFLICT (name) DO UPDATE
   SET display_name = EXCLUDED.display_name,
       group_name   = EXCLUDED.group_name,
@@ -257,6 +270,36 @@ INSERT INTO public.districts (name, name_zh, center_lat, center_lng) VALUES
 ON CONFLICT (name) DO UPDATE
   SET name_zh    = EXCLUDED.name_zh,
       center_lat = EXCLUDED.center_lat,
+      center_lng = EXCLUDED.center_lng;
+
+-- ============================================================
+-- Seed data — Singapore districts (CCR / RCR / OCR)
+-- ============================================================
+INSERT INTO public.districts (name, center_lat, center_lng) VALUES
+  -- Core Central Region (CCR)
+  ('Orchard',       1.3048,  103.8318),
+  ('Marina_Bay',    1.2847,  103.8610),
+  ('Tanjong_Pagar', 1.2763,  103.8468),
+  ('Chinatown',     1.2838,  103.8447),
+  ('Bugis',         1.3005,  103.8568),
+  -- Rest of Central Region (RCR)
+  ('Novena',        1.3200,  103.8437),
+  ('Queenstown',    1.2952,  103.7860),
+  ('Toa_Payoh',     1.3327,  103.8468),
+  ('Bishan',        1.3501,  103.8480),
+  -- Outside Central Region (OCR)
+  ('Tampines',      1.3540,  103.9455),
+  ('Jurong_East',   1.3329,  103.7436),
+  ('Woodlands',     1.4371,  103.7861),
+  ('Sengkang',      1.3910,  103.8945),
+  ('Punggol',       1.4044,  103.9021),
+  ('Ang_Mo_Kio',    1.3690,  103.8454),
+  ('Bedok',         1.3236,  103.9273),
+  ('Clementi',      1.3150,  103.7653),
+  ('Yishun',        1.4299,  103.8362),
+  ('Serangoon',     1.3554,  103.8679)
+ON CONFLICT (name) DO UPDATE
+  SET center_lat = EXCLUDED.center_lat,
       center_lng = EXCLUDED.center_lng;
 
 -- ============================================================

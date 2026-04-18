@@ -7,8 +7,8 @@ import Link from 'next/link'
 import Navbar from '@/components/Navbar'
 import ErrorBanner from '../components/Error'
 
-// ── Taipei district nav shortcuts ─────────────────────────────────────────────
-const DISTRICTS: Record<string, [number, number]> = {
+// ── District nav shortcuts ────────────────────────────────────────────────────
+const TAIPEI_DISTRICTS: Record<string, [number, number]> = {
   "Da'an":    [121.543,   25.026   ],
   Xinyi:      [121.5677,  25.0348  ],
   Zhongshan:  [121.5254,  25.0550  ],
@@ -23,6 +23,33 @@ const DISTRICTS: Record<string, [number, number]> = {
   Beitou:     [121.5000,  25.1167  ],
 }
 
+const SINGAPORE_DISTRICTS: Record<string, [number, number]> = {
+  Orchard:       [103.8318,  1.3048 ],
+  Marina_Bay:    [103.8610,  1.2847 ],
+  Tanjong_Pagar: [103.8468,  1.2763 ],
+  Chinatown:     [103.8447,  1.2838 ],
+  Bugis:         [103.8568,  1.3005 ],
+  Novena:        [103.8437,  1.3200 ],
+  Queenstown:    [103.7860,  1.2952 ],
+  Toa_Payoh:     [103.8468,  1.3327 ],
+  Bishan:        [103.8480,  1.3501 ],
+  Tampines:      [103.9455,  1.3540 ],
+  Jurong_East:   [103.7436,  1.3329 ],
+  Woodlands:     [103.7861,  1.4371 ],
+  Sengkang:      [103.8945,  1.3910 ],
+  Punggol:       [103.9021,  1.4044 ],
+  Ang_Mo_Kio:    [103.8454,  1.3690 ],
+  Bedok:         [103.9273,  1.3236 ],
+  Clementi:      [103.7653,  1.3150 ],
+  Yishun:        [103.8362,  1.4299 ],
+  Serangoon:     [103.8679,  1.3554 ],
+}
+
+const CITY_CONFIG = {
+  taipei:    { center: [121.5436,  25.0374] as [number, number], zoom: 13, label: 'Taipei'    },
+  singapore: { center: [103.8198,   1.3521] as [number, number], zoom: 11, label: 'Singapore' },
+}
+
 const CATEGORY_COLORS: Record<string, string> = {
   cafe:               '#ea580c',
   convenience_store:  '#3b82f6',
@@ -30,8 +57,34 @@ const CATEGORY_COLORS: Record<string, string> = {
   restaurant:         '#a855f7',
   bakery:             '#f59e0b',
   beverage_store:     '#06b6d4',
+  hawker:             '#eab308',
+  supermarket:        '#10b981',
+  pharmacy:           '#ec4899',
+  gym:                '#8b5cf6',
+  coworking:          '#0ea5e9',
+  childcare:          '#f43f5e',
+  laundromat:         '#64748b',
+  shopping_mall:      '#a855f7',
 }
 const DEFAULT_COLOR = '#94a3b8'
+
+// ── Signal intelligence per category ─────────────────────────────────────────
+const SIGNAL_INTEL: Record<string, { emoji: string; signal: string; high: string; tip: string }> = {
+  cafe:              { emoji: '☕', signal: 'Knowledge worker / office density',    high: 'Commercial hub — B2B services, co-working, premium lunch',     tip: 'High cafe + low convenience = pure CBD, no residents' },
+  convenience_store: { emoji: '🏪', signal: 'Residential population proxy',         high: 'Dense estate — family services, FMCG, last-mile logistics',    tip: 'High convenience + low cafe = residential heartland' },
+  grocery:           { emoji: '🥦', signal: 'Residential self-sufficiency index',   high: 'Large catchment, self-contained neighbourhood',               tip: 'Absence = underserved estate — supply gap opportunity' },
+  restaurant:        { emoji: '🍽️', signal: 'Evening economy strength',             high: 'Entertainment zone after 6 pm — nightlife adjacent',          tip: 'Density spike = strong weekend foot traffic' },
+  bakery:            { emoji: '🥐', signal: 'Gentrification front indicator',       high: 'Boutique bakeries appear early in upgrading areas',           tip: 'Opening wave = rents rising within 12 months' },
+  beverage_store:    { emoji: '🧋', signal: 'Youth + foot traffic volume',          high: 'MRT-adjacent or school catchment — impulse purchase zone',    tip: 'High boba density = high foot traffic, price-sensitive crowd' },
+  hawker:            { emoji: '🍜', signal: 'Blue-collar workforce / lunch demand', high: 'Value F&B wins — kopitiam = captive lunch trade',             tip: 'Absence in dense area = premium zone or supply gap' },
+  supermarket:       { emoji: '🛒', signal: 'Residential income bracket signal',    high: 'Cold Storage = premium; absence = underserved estate',        tip: 'NTUC vs Cold Storage tells you the income bracket' },
+  pharmacy:          { emoji: '💊', signal: 'Aging or family demographic area',     high: 'Healthcare-adjacent demand — wellness retail opportunity',    tip: 'Pharmacy surge = aging population moving in' },
+  gym:               { emoji: '💪', signal: 'Young professional concentration',     high: 'Premium services fit — health food, activewear, studios',     tip: 'Gym + coworking = startup district emerging' },
+  coworking:         { emoji: '💻', signal: 'Startup / remote-worker density',      high: 'Tech services, SaaS, B2B tools opportunity',                 tip: 'Coworking + cafe + boba = "startup district" signal' },
+  childcare:         { emoji: '🧒', signal: 'Families with children (ages 0–12)',   high: 'Education, parenting retail, family dining demand',           tip: 'Childcare + pharmacy surge = dual-generation family estate' },
+  laundromat:        { emoji: '👕', signal: 'Rental-heavy / transient population',  high: 'Budget services win — avoid luxury or premium positioning',   tip: 'Laundromat + hawker cluster = migrant worker zone' },
+  shopping_mall:     { emoji: '🏬', signal: 'Foot traffic anchor / retail magnet',  high: 'Premium retail zone — high rent, strong daily pedestrian flow', tip: 'Mall near MRT = captive catchment; count exits, not just distance' },
+}
 
 type Place = {
   id: string
@@ -59,6 +112,7 @@ export default function Home() {
   const [isAdmin,          setIsAdmin]          = useState(false)
   const [categories,       setCategories]       = useState<string[]>([])
   const [selectedCategory, setSelectedCategory] = useState('cafe')
+  const [city,             setCity]             = useState<'taipei' | 'singapore'>('singapore')
   const [visiblePlaces,    setVisiblePlaces]    = useState<Place[]>([])
   const [totalLoaded,      setTotalLoaded]      = useState(0)
   const [loading,          setLoading]          = useState(false)
@@ -112,8 +166,8 @@ export default function Home() {
       container:   mapContainer.current,
       accessToken: process.env.NEXT_PUBLIC_MAPBOX_TOKEN,
       style:       'mapbox://styles/mapbox/streets-v11',
-      center:      [121.5436, 25.0374],
-      zoom:        13,
+      center:      CITY_CONFIG.singapore.center,
+      zoom:        CITY_CONFIG.singapore.zoom,
     })
     map.current.addControl(new mapboxgl.NavigationControl(), 'top-right')
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -163,37 +217,44 @@ export default function Home() {
     const emptyGeo: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] }
     map.current.addSource('places', { type: 'geojson', data: emptyGeo })
 
-    // Heatmap layer (low zoom)
+    // Heatmap layer — faded gradient, zoom-driven opacity, fine granularity
     map.current.addLayer({
       id:      'places-heat',
       type:    'heatmap',
       source:  'places',
-      maxzoom: 14,
+      maxzoom: 15,
       paint: {
-        'heatmap-weight':     1,
-        'heatmap-intensity':  ['interpolate', ['linear'], ['zoom'], 0, 0.4, 14, 1.5],
+        // Weight tapers off so dense clusters don't blow out at low zoom
+        'heatmap-weight': ['interpolate', ['linear'], ['zoom'], 0, 0.5, 13, 1],
+        // Intensity stays gentle — avoids solid blobs
+        'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 0, 0.25, 13, 1],
+        // Color ramp: fully transparent → never exceeds ~65% opacity
         'heatmap-color': [
           'interpolate', ['linear'], ['heatmap-density'],
-          0,   'rgba(0,0,0,0)',
-          0.2, `${color}44`,
-          0.6, `${color}aa`,
-          1,   color,
+          0,    'rgba(0,0,0,0)',
+          0.1,  `${color}18`,   // barely visible fringe
+          0.3,  `${color}44`,   // soft glow
+          0.55, `${color}77`,   // mid-density
+          0.8,  `${color}aa`,   // peak — translucent, never solid
+          1,    `${color}bb`,
         ],
-        'heatmap-radius':  ['interpolate', ['linear'], ['zoom'], 0, 12, 14, 30],
-        'heatmap-opacity': 0.75,
+        // Tighter radius = finer granularity (each hotspot is distinct, not one blob)
+        'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 6, 11, 18, 14, 28],
+        // Key: fade heatmap out as circles take over at high zoom
+        'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 9, 0.9, 12, 0.55, 14, 0.15, 15, 0],
       },
     })
 
-    // Circle layer (high zoom)
+    // Circle layer — visible at street-level zoom
     map.current.addLayer({
       id:      'places-circles',
       type:    'circle',
       source:  'places',
-      minzoom: 11,
+      minzoom: 12,
       paint: {
-        'circle-radius':       6,
+        'circle-radius':       5,
         'circle-color':        color,
-        'circle-opacity':      0.85,
+        'circle-opacity':      ['interpolate', ['linear'], ['zoom'], 12, 0.5, 14, 0.85],
         'circle-stroke-width': 1.5,
         'circle-stroke-color': '#fff',
       },
@@ -302,9 +363,19 @@ export default function Home() {
   }, [])
 
   // ── Navigate to district ──────────────────────────────────────────────────────
-  const flyToDistrict = useCallback((name: string) => {
-    const [lng, lat] = DISTRICTS[name]
+  const flyToDistrict = useCallback((name: string, currentCity: 'taipei' | 'singapore') => {
+    const districts = currentCity === 'singapore' ? SINGAPORE_DISTRICTS : TAIPEI_DISTRICTS
+    const coords = districts[name]
+    if (!coords) return
+    const [lng, lat] = coords
     map.current?.easeTo({ center: [lng, lat], zoom: 14, duration: 600 })
+  }, [])
+
+  // ── Switch city ───────────────────────────────────────────────────────────────
+  const switchCity = useCallback((c: 'taipei' | 'singapore') => {
+    setCity(c)
+    const cfg = CITY_CONFIG[c]
+    map.current?.easeTo({ center: cfg.center, zoom: cfg.zoom, duration: 800 })
   }, [])
 
   // ── Research this area (admin only, hits Google API, then re-loads) ───────────
@@ -347,8 +418,23 @@ export default function Home() {
 
           {/* Header */}
           <div className="shrink-0 px-5 pt-5 pb-4 border-b border-gray-100">
-            <h1 className="text-base font-bold text-gray-900 tracking-tight">Taipei Business Map</h1>
+            <h1 className="text-base font-bold text-gray-900 tracking-tight">StorePulse · {city === 'singapore' ? 'Singapore' : 'Taipei'}</h1>
             <p className="text-xs text-gray-400 mt-0.5">Location intelligence for every district</p>
+            {/* City toggle */}
+            <div className="mt-3 flex gap-1.5">
+              {(['taipei', 'singapore'] as const).map(c => (
+                <button
+                  key={c}
+                  onClick={() => switchCity(c)}
+                  className="flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                  style={city === c
+                    ? { background: '#1e293b', color: '#fff' }
+                    : { background: '#f1f5f9', color: '#64748b' }}
+                >
+                  {CITY_CONFIG[c].label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Category tabs */}
@@ -372,17 +458,35 @@ export default function Home() {
             </div>
           </div>
 
+          {/* Signal intelligence panel */}
+          {SIGNAL_INTEL[selectedCategory] && (() => {
+            const s = SIGNAL_INTEL[selectedCategory]
+            const c = CATEGORY_COLORS[selectedCategory] ?? DEFAULT_COLOR
+            return (
+              <div className="shrink-0 px-5 py-3 border-b border-gray-100" style={{ background: `${c}08` }}>
+                <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: c }}>
+                  {s.emoji} What this signal means
+                </p>
+                <p className="text-xs font-semibold text-gray-800 mb-1">{s.signal}</p>
+                <p className="text-xs text-gray-500 mb-2">{s.high}</p>
+                <div className="text-[11px] text-gray-400 bg-white/60 border border-gray-200 rounded-lg px-2.5 py-1.5 leading-snug">
+                  <span className="font-semibold text-gray-600">Cross-signal: </span>{s.tip}
+                </div>
+              </div>
+            )
+          })()}
+
           {/* District shortcuts */}
           <div className="shrink-0 px-5 py-3 border-b border-gray-100">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Jump to district</p>
             <div className="flex flex-wrap gap-1">
-              {Object.keys(DISTRICTS).map(d => (
+              {Object.keys(city === 'singapore' ? SINGAPORE_DISTRICTS : TAIPEI_DISTRICTS).map(d => (
                 <button
                   key={d}
-                  onClick={() => flyToDistrict(d)}
+                  onClick={() => flyToDistrict(d, city)}
                   className="px-2 py-0.5 rounded text-[11px] bg-gray-100 hover:bg-gray-200 text-gray-600 transition"
                 >
-                  {d}
+                  {d.replace(/_/g, ' ')}
                 </button>
               ))}
             </div>

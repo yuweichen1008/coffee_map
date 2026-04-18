@@ -276,8 +276,8 @@ function StatsBar() {
       <div className="max-w-4xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-8 text-center px-6">
         {[
           { value: 4964, suffix: '+', label: 'Businesses tracked' },
-          { value: 12, suffix: '', label: 'Taipei districts' },
-          { value: 5, suffix: '', label: 'Social platforms' },
+          { value: 19, suffix: '', label: 'Singapore districts' },
+          { value: 13, suffix: '', label: 'Store categories' },
           { value: 100, suffix: '', label: 'Location score max' },
         ].map(s => (
           <div key={s.label}>
@@ -315,7 +315,7 @@ function Hero() {
 
       <div className="relative z-10 max-w-3xl">
         <p className="text-orange-400 text-xs font-bold tracking-[0.25em] uppercase mb-6">
-          Taipei Business Intelligence
+          Singapore Location Intelligence
         </p>
         <h1 className="text-5xl md:text-7xl font-black tracking-tight leading-none mb-6">
           Find your<br />
@@ -325,8 +325,8 @@ function Hero() {
           </span>
         </h1>
         <p className="text-xl text-gray-400 font-light max-w-xl mx-auto leading-relaxed mb-10">
-          Social trends, competitor density, and demographic data — mapped
-          across every district in Taipei, in seconds.
+          Store density, competitor signals, and demographic data — mapped
+          across every district in Singapore, in seconds.
         </p>
 
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
