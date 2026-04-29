@@ -165,7 +165,7 @@ export default function Home() {
     map.current = new mapboxgl.Map({
       container:   mapContainer.current,
       accessToken: process.env.NEXT_PUBLIC_MAPBOX_TOKEN,
-      style:       'mapbox://styles/mapbox/streets-v11',
+      style:       'mapbox://styles/mapbox/dark-v11',
       center:      CITY_CONFIG.singapore.center,
       zoom:        CITY_CONFIG.singapore.zoom,
     })
@@ -414,11 +414,11 @@ export default function Home() {
         </main>
 
         {/* ── Sidebar ── */}
-        <aside className="w-full md:w-1/4 flex flex-col bg-white border-l border-gray-200 h-1/2 md:h-full">
+        <aside className="w-full md:w-1/4 flex flex-col bg-gray-900 border-l border-white/8 h-1/2 md:h-full">
 
           {/* Header */}
-          <div className="shrink-0 px-5 pt-5 pb-4 border-b border-gray-100">
-            <h1 className="text-base font-bold text-gray-900 tracking-tight">StorePulse · {city === 'singapore' ? 'Singapore' : 'Taipei'}</h1>
+          <div className="shrink-0 px-5 pt-5 pb-4 border-b border-white/8">
+            <h1 className="text-base font-bold text-white tracking-tight">StorePulse · {city === 'singapore' ? 'Singapore' : 'Taipei'}</h1>
             <p className="text-xs text-gray-400 mt-0.5">Location intelligence for every district</p>
             {/* City toggle */}
             <div className="mt-3 flex gap-1.5">
@@ -428,8 +428,8 @@ export default function Home() {
                   onClick={() => switchCity(c)}
                   className="flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all"
                   style={city === c
-                    ? { background: '#1e293b', color: '#fff' }
-                    : { background: '#f1f5f9', color: '#64748b' }}
+                    ? { background: '#f97316', color: '#fff' }
+                    : { background: 'rgba(255,255,255,0.06)', color: '#9ca3af' }}
                 >
                   {CITY_CONFIG[c].label}
                 </button>
@@ -438,8 +438,8 @@ export default function Home() {
           </div>
 
           {/* Category tabs */}
-          <div className="shrink-0 px-5 py-3 border-b border-gray-100">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Category</p>
+          <div className="shrink-0 px-5 py-3 border-b border-white/8">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-2">Category</p>
             <div className="flex flex-wrap gap-1.5">
               {(categories.length ? categories : Object.keys(CATEGORY_COLORS)).map(cat => (
                 <button
@@ -449,7 +449,7 @@ export default function Home() {
                   style={
                     selectedCategory === cat
                       ? { backgroundColor: CATEGORY_COLORS[cat] ?? DEFAULT_COLOR, color: '#fff' }
-                      : { backgroundColor: '#f3f4f6', color: '#6b7280' }
+                      : { backgroundColor: 'rgba(255,255,255,0.07)', color: '#9ca3af' }
                   }
                 >
                   {cat.replace(/_/g, ' ')}
@@ -463,28 +463,28 @@ export default function Home() {
             const s = SIGNAL_INTEL[selectedCategory]
             const c = CATEGORY_COLORS[selectedCategory] ?? DEFAULT_COLOR
             return (
-              <div className="shrink-0 px-5 py-3 border-b border-gray-100" style={{ background: `${c}08` }}>
+              <div className="shrink-0 px-5 py-3 border-b border-white/8" style={{ background: `${c}12` }}>
                 <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: c }}>
                   {s.emoji} What this signal means
                 </p>
-                <p className="text-xs font-semibold text-gray-800 mb-1">{s.signal}</p>
-                <p className="text-xs text-gray-500 mb-2">{s.high}</p>
-                <div className="text-[11px] text-gray-400 bg-white/60 border border-gray-200 rounded-lg px-2.5 py-1.5 leading-snug">
-                  <span className="font-semibold text-gray-600">Cross-signal: </span>{s.tip}
+                <p className="text-xs font-semibold text-gray-200 mb-1">{s.signal}</p>
+                <p className="text-xs text-gray-400 mb-2">{s.high}</p>
+                <div className="text-[11px] text-gray-400 bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 leading-snug">
+                  <span className="font-semibold text-gray-300">Cross-signal: </span>{s.tip}
                 </div>
               </div>
             )
           })()}
 
           {/* District shortcuts */}
-          <div className="shrink-0 px-5 py-3 border-b border-gray-100">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Jump to district</p>
+          <div className="shrink-0 px-5 py-3 border-b border-white/8">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-2">Jump to district</p>
             <div className="flex flex-wrap gap-1">
               {Object.keys(city === 'singapore' ? SINGAPORE_DISTRICTS : TAIPEI_DISTRICTS).map(d => (
                 <button
                   key={d}
                   onClick={() => flyToDistrict(d, city)}
-                  className="px-2 py-0.5 rounded text-[11px] bg-gray-100 hover:bg-gray-200 text-gray-600 transition"
+                  className="px-2 py-0.5 rounded text-[11px] bg-white/6 hover:bg-white/12 text-gray-400 hover:text-gray-200 transition"
                 >
                   {d.replace(/_/g, ' ')}
                 </button>
@@ -493,9 +493,9 @@ export default function Home() {
           </div>
 
           {/* Stats row */}
-          <div className="shrink-0 px-5 pt-3 pb-2.5 border-b border-gray-100">
+          <div className="shrink-0 px-5 pt-3 pb-2.5 border-b border-white/8">
             {/* Indeterminate progress bar — visible while loading */}
-            <div className="h-0.5 rounded-full overflow-hidden bg-gray-100 mb-2.5">
+            <div className="h-0.5 rounded-full overflow-hidden bg-white/8 mb-2.5">
               <div
                 className={`h-full rounded-full transition-opacity duration-300 ${loading ? 'opacity-100' : 'opacity-0'}`}
                 style={{
@@ -517,15 +517,15 @@ export default function Home() {
                 <span className="font-bold" style={{ color }}>{visiblePlaces.length}</span>
                 <span className="text-gray-400 text-xs">in view</span>
                 <div className="w-px h-4 bg-gray-200" />
-                <span className="font-bold text-gray-500">{totalLoaded}</span>
-                <span className="text-gray-400 text-xs">in DB</span>
+                <span className="font-bold text-gray-400">{totalLoaded}</span>
+                <span className="text-gray-500 text-xs">in DB</span>
               </div>
             )}
           </div>
 
           {/* Research button — admin only, when DB has sparse data */}
           {!loading && isAdmin && totalLoaded < 30 && (
-            <div className="shrink-0 px-5 py-3 border-b border-gray-100 bg-blue-50">
+            <div className="shrink-0 px-5 py-3 border-b border-white/8 bg-blue-950/40">
               <button
                 onClick={researchArea}
                 disabled={researching}
@@ -553,8 +553,8 @@ export default function Home() {
           <div className="flex-1 min-h-0 overflow-y-auto">
             {!loading && visiblePlaces.length > 0 ? (
               <>
-                <div className="sticky top-0 bg-white px-5 py-2 border-b border-gray-100 z-10">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                <div className="sticky top-0 bg-gray-900 px-5 py-2 border-b border-white/8 z-10">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
                     Stores in view · {visiblePlaces.length}
                   </p>
                 </div>
@@ -562,8 +562,8 @@ export default function Home() {
                   {visiblePlaces.map((place, i) => (
                     <li
                       key={place.id}
-                      className={`flex items-start gap-3 px-5 py-2.5 border-b border-gray-50 cursor-pointer transition-colors ${
-                        hoveredId === place.id ? 'bg-orange-50' : 'hover:bg-gray-50'
+                      className={`flex items-start gap-3 px-5 py-2.5 border-b border-white/5 cursor-pointer transition-colors ${
+                        hoveredId === place.id ? 'bg-orange-500/10' : 'hover:bg-white/5'
                       }`}
                       onMouseEnter={() => handleHoverEnter(place)}
                       onMouseLeave={handleHoverLeave}
@@ -576,9 +576,9 @@ export default function Home() {
                         {i + 1 > 99 ? '·' : i + 1}
                       </span>
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-gray-800 leading-snug truncate">{place.name}</p>
+                        <p className="text-sm font-medium text-gray-100 leading-snug truncate">{place.name}</p>
                         {place.address && (
-                          <p className="text-xs text-gray-400 mt-0.5 leading-snug truncate">{place.address}</p>
+                          <p className="text-xs text-gray-500 mt-0.5 leading-snug truncate">{place.address}</p>
                         )}
                       </div>
                     </li>
@@ -587,7 +587,7 @@ export default function Home() {
               </>
             ) : !loading ? (
               <div className="flex flex-col items-center justify-center h-full text-center px-6 py-10 text-gray-400">
-                <svg className="w-8 h-8 mb-3 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-8 h-8 mb-3 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                     d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
                 </svg>
@@ -604,36 +604,36 @@ export default function Home() {
           </div>
 
           {/* ── Bottom links ── */}
-          <div className="shrink-0 border-t border-gray-100">
+          <div className="shrink-0 border-t border-white/8">
             <Link
               href="/time-machine"
-              className="flex items-center justify-between w-full px-5 py-3 hover:bg-gray-50 transition group border-b border-gray-100"
+              className="flex items-center justify-between w-full px-5 py-3 hover:bg-white/5 transition group border-b border-white/8"
             >
               <div className="flex items-center gap-3">
-                <div className="w-7 h-7 rounded-lg bg-gray-900 flex items-center justify-center shrink-0">
-                  <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="w-7 h-7 rounded-lg bg-white/8 flex items-center justify-center shrink-0">
+                  <svg className="w-3.5 h-3.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-gray-800">Time Machine</p>
-                  <p className="text-xs text-gray-400">Watch the city grow year by year</p>
+                  <p className="text-sm font-semibold text-gray-200">Time Machine</p>
+                  <p className="text-xs text-gray-500">Watch the city grow year by year</p>
                 </div>
               </div>
-              <svg className="w-4 h-4 text-gray-300 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 text-gray-600 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </Link>
 
             <div className="flex items-center gap-3 px-5 py-3">
-              <div className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
-                <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center shrink-0">
+                <svg className="w-3.5 h-3.5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-600">Report a store</p>
-                <p className="text-xs text-gray-400">Coming soon</p>
+                <p className="text-sm font-medium text-gray-500">Report a store</p>
+                <p className="text-xs text-gray-600">Coming soon</p>
               </div>
             </div>
           </div>

@@ -24,6 +24,7 @@ const Navbar: FC<{ isAdmin?: boolean; userEmail?: string | null }> = ({ isAdmin,
           <Link href="/map" className="text-gray-400 hover:text-white text-sm transition">Map</Link>
           <Link href="/time-machine" className="text-gray-400 hover:text-white text-sm transition">Time Machine</Link>
           <Link href="/discover" className="text-gray-400 hover:text-white text-sm transition">Discover</Link>
+          <Link href="/michelin" className="text-yellow-400 hover:text-yellow-300 text-sm transition">★ Michelin</Link>
           <Link href="/intro" className="text-gray-400 hover:text-white text-sm transition">How It Works</Link>
           <Link href="/pitch"
             className="flex items-center gap-1.5 text-orange-400 hover:text-orange-300 text-sm font-semibold transition">
