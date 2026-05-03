@@ -1,167 +1,153 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
-import { supabase } from '@/lib/supabaseClient';
-import { User } from '@supabase/supabase-js';
+import getDb from '@/lib/db'
 
-// Check if user is admin by comparing email against NEXT_PUBLIC_ADMIN_EMAIL
-const isAdmin = (user: User) => {
-  return user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL;
+// Admin check: compare Bearer token against ADMIN_SECRET env var.
+// No external auth service needed — single-admin tool.
+function checkAdmin(req: NextApiRequest): boolean {
+  const secret = process.env.ADMIN_SECRET
+  if (!secret) return false
+  const token = req.headers.authorization?.split(' ')[1]
+  return token === secret
 }
 
-const getPlacesFromCache = async (lat: number, lng: number, radius: number, keyword: string, startDate?: string, endDate?: string) => {
-  if (!supabase) return null;
+async function getPlacesFromCache(
+  sql: ReturnType<typeof import('@/lib/db').getDb>,
+  lat: number, lng: number, radius: number, keyword: string,
+  startDate?: string, endDate?: string
+) {
+  const latDelta = radius / 111320
+  const lngDelta = radius / (111320 * Math.cos(lat * Math.PI / 180))
 
-  const metersToLat = (m: number) => m / 111320;
-  const metersToLng = (m: number, lat: number) => m / (111320 * Math.cos(lat * Math.PI / 180));
-  const latDelta = metersToLat(radius);
-  const lngDelta = metersToLng(radius, lat);
-
-  // No staleness filter — always show cached data regardless of age.
-  // Freshness is managed by admin re-sync, not by hiding old data from users.
-  let query = supabase
-    .from('places')
-    .select('*')
-    .eq('category', keyword)
-    .gte('lat', lat - latDelta)
-    .lte('lat', lat + latDelta)
-    .gte('lng', lng - lngDelta)
-    .lte('lng', lng + lngDelta);
-
-  if (startDate) query = query.gte('founded_date', startDate);
-  if (endDate)   query = query.lte('founded_date', endDate);
-
-  const { data: cachedPlaces, error } = await query;
-
-  if (error) {
-    console.error('Supabase cache query failed:', error);
-    return null;
-  }
-
-  return cachedPlaces;
+  const rows = startDate && endDate
+    ? await sql!`
+        SELECT * FROM places
+        WHERE category = ${keyword}
+          AND lat BETWEEN ${lat - latDelta} AND ${lat + latDelta}
+          AND lng BETWEEN ${lng - lngDelta} AND ${lng + lngDelta}
+          AND founded_date >= ${startDate} AND founded_date <= ${endDate}
+      `
+    : startDate
+    ? await sql!`
+        SELECT * FROM places
+        WHERE category = ${keyword}
+          AND lat BETWEEN ${lat - latDelta} AND ${lat + latDelta}
+          AND lng BETWEEN ${lng - lngDelta} AND ${lng + lngDelta}
+          AND founded_date >= ${startDate}
+      `
+    : await sql!`
+        SELECT * FROM places
+        WHERE category = ${keyword}
+          AND lat BETWEEN ${lat - latDelta} AND ${lat + latDelta}
+          AND lng BETWEEN ${lng - lngDelta} AND ${lng + lngDelta}
+      `
+  return rows
 }
 
-const getPlacesFromGoogle = async (lat: number, lng: number, radius: number, keyword: string, maxPages: number) => {
-  const key = process.env.GOOGLE_MAPS_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-  if (!key) throw new Error('Missing server API key');
+async function fetchFromGoogle(lat: number, lng: number, radius: number, keyword: string, maxPages: number) {
+  const key = process.env.GOOGLE_MAPS_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+  if (!key) throw new Error('Missing Google Maps API key')
 
-  const location = `${lat},${lng}`;
-  const delay = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+  const delay = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
+  const aggregated: any[] = []
+  let url: string | null =
+    `https://maps.googleapis.com/maps/api/place/nearbysearch/json` +
+    `?location=${lat},${lng}&radius=${radius}&keyword=${encodeURIComponent(keyword)}&key=${key}`
 
-  const aggregated: any[] = [];
-  let url: string | null = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${encodeURIComponent(
-    location,
-  )}&radius=${radius}&keyword=${encodeURIComponent(keyword)}&key=${key}`;
+  for (let page = 0; url && page < maxPages; ) {
+    const r    = await fetch(url)
+    const json = await r.json()
 
-  for (let pageIndex = 0; url && pageIndex < maxPages; ) {
-    const r = await fetch(url);
-    const json = await r.json();
-
-    if (json.status === 'INVALID_REQUEST' && url.includes('pagetoken')) {
-      await delay(2500);
-      continue;
-    }
+    if (json.status === 'INVALID_REQUEST' && url.includes('pagetoken')) { await delay(2500); continue }
     if (json.status !== 'OK' && json.status !== 'ZERO_RESULTS') {
-      if (pageIndex === 0) {
-        throw new Error(json.error_message || json.status);
-      }
-      console.warn('Places NearbySearch stopped', json.status, json.error_message);
-      break;
+      if (page === 0) throw new Error(json.error_message || json.status)
+      break
     }
-    if (json.results?.length) aggregated.push(...json.results);
-
-    if (!json.next_page_token) break;
-    await delay(2100);
-    url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?pagetoken=${encodeURIComponent(
-      json.next_page_token,
-    )}&key=${key}`;
-    pageIndex += 1;
+    if (json.results?.length) aggregated.push(...json.results)
+    if (!json.next_page_token) break
+    await delay(2100)
+    url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?pagetoken=${encodeURIComponent(json.next_page_token)}&key=${key}`
+    page++
   }
-  return aggregated;
+  return aggregated
 }
 
-const savePlacesToCache = async (places: any[], keyword: string) => {
-  const placesToInsert = places.map((place: any) => ({
-    name: place.name,
-    address: place.vicinity,
-    lat: place.geometry?.location?.lat || null,
-    lng: place.geometry?.location?.lng || null,
-    google_place_id: place.place_id,
-    category: keyword,
-    source: 'google',
-  }));
+async function upsertPlaces(sql: NonNullable<ReturnType<typeof import('@/lib/db').getDb>>, places: any[], keyword: string) {
+  let count = 0
+  const errors: any[] = []
 
-  const upsertReport: { count: number; errors: any[] } = { count: 0, errors: [] };
-
-  for (const p of placesToInsert) {
-    if (!p.google_place_id) continue;
-    const { error } = await supabase.from('places').upsert(p, { onConflict: 'google_place_id' });
-    if (error) {
-      upsertReport.errors.push({ place: p.name, error });
-    } else {
-      upsertReport.count++;
+  for (const p of places) {
+    if (!p.place_id) continue
+    try {
+      await sql`
+        INSERT INTO places (name, address, lat, lng, google_place_id, category, source)
+        VALUES (
+          ${p.name},
+          ${p.vicinity ?? null},
+          ${p.geometry?.location?.lat ?? null},
+          ${p.geometry?.location?.lng ?? null},
+          ${p.place_id},
+          ${keyword},
+          'google'
+        )
+        ON CONFLICT (google_place_id) DO UPDATE SET
+          name    = EXCLUDED.name,
+          address = EXCLUDED.address,
+          lat     = EXCLUDED.lat,
+          lng     = EXCLUDED.lng
+      `
+      count++
+    } catch (e) {
+      errors.push({ place: p.name, error: String(e) })
     }
   }
-
-  return upsertReport;
+  return { count, errors }
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const { query, lat, lng, radius: radiusQ, maxPages: maxPagesQ, force_refresh, start_date, end_date } = req.query as {
-    query?: string
-    lat?: string
-    lng?: string
-    radius?: string
-    maxPages?: string
-    force_refresh?: string
-    start_date?: string
-    end_date?: string
-  }
+  const {
+    query, lat, lng,
+    radius: radiusQ, maxPages: maxPagesQ,
+    force_refresh, start_date, end_date,
+  } = req.query as Record<string, string>
 
-  if (!lat || !lng) {
-    return res.status(400).json({ error: 'lat and lng are required' });
-  }
+  if (!lat || !lng) return res.status(400).json({ error: 'lat and lng are required' })
 
-  const parsedLat = parseFloat(lat);
-  const parsedLng = parseFloat(lng);
-  const keyword = (query as string) || 'cafe';
-  let radiusMeters = parseInt(String(radiusQ || ''), 10);
-  if (!Number.isFinite(radiusMeters) || radiusMeters < 1) radiusMeters = 2000;
-  radiusMeters = Math.min(50000, Math.max(200, radiusMeters));
+  const parsedLat = parseFloat(lat)
+  const parsedLng = parseFloat(lng)
+  const keyword   = query || 'cafe'
+  let   radiusM   = Math.min(50000, Math.max(200, parseInt(radiusQ || '2000') || 2000))
 
-  // Step 1: always try the cache — no auth required for reads
-  if (force_refresh !== 'true') {
-    const cachedPlaces = await getPlacesFromCache(parsedLat, parsedLng, radiusMeters, keyword, start_date, end_date);
-    if (cachedPlaces && cachedPlaces.length > 0) {
-      return res.status(200).json({ results: cachedPlaces, source: 'cache' });
+  const sql = getDb()
+
+  // Step 1: try cache (no auth required)
+  if (force_refresh !== 'true' && sql) {
+    try {
+      const cached = await getPlacesFromCache(sql, parsedLat, parsedLng, radiusM, keyword, start_date, end_date)
+      if (cached.length > 0) return res.status(200).json({ results: cached, source: 'cache' })
+    } catch (e) {
+      console.error('[places] cache query failed', e)
     }
   }
 
   // Step 2: cache miss — only admins may trigger a live Google fetch
-  const token = req.headers.authorization?.split(' ')[1];
-  const { data: { user } } = await supabase.auth.getUser(token);
-  if (!user || !isAdmin(user)) {
-    // Return empty gracefully — not an error for public users
-    return res.status(200).json({ results: [], source: 'no_cache' });
+  if (!checkAdmin(req)) {
+    return res.status(200).json({ results: [], source: 'no_cache' })
   }
 
   try {
-    let maxPages = parseInt(String(maxPagesQ || ''), 10);
-    if (!Number.isFinite(maxPages) || maxPages < 1) maxPages = 3;
-    maxPages = Math.min(3, Math.max(1, maxPages));
+    const maxPages    = Math.min(3, Math.max(1, parseInt(maxPagesQ || '3') || 3))
+    const googlePlaces = await fetchFromGoogle(parsedLat, parsedLng, radiusM, keyword, maxPages)
 
-    const googlePlaces = await getPlacesFromGoogle(parsedLat, parsedLng, radiusMeters, keyword, maxPages);
-    const upsertReport = await savePlacesToCache(googlePlaces, keyword);
+    let upsertReport = { count: 0, errors: [] as any[] }
+    if (sql) upsertReport = await upsertPlaces(sql, googlePlaces, keyword)
 
     return res.status(200).json({
       results: googlePlaces,
-      status: 'OK',
-      source: 'google',
-      supabase: {
-        writable: true,
-        upsert: upsertReport,
-      },
-    });
-  } catch (error: any) {
-    console.error('Google Maps API fetch failed:', error);
-    return res.status(500).json({ error: error.message || 'Failed to fetch data from Google Maps' });
+      source:  'google',
+      db:      { upsert: upsertReport },
+    })
+  } catch (e: any) {
+    console.error('[places] Google fetch failed', e)
+    return res.status(500).json({ error: e.message || 'Failed to fetch from Google Maps' })
   }
 }

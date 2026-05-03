@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgis/postgis:15-3.4
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: storepulse
+      POSTGRES_USER: storepulse
+      POSTGRES_PASSWORD: storepulse
+    volumes:
+      - ./db/init_all.sql:/docker-entrypoint-initdb.d/01_init.sql
+      - ./db/sg_enrichment.sql:/docker-entrypoint-initdb.d/02_sg.sql
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U storepulse -d storepulse"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file: .env.docker
+    environment:
+      DATABASE_URL: postgres://storepulse:storepulse@db:5432/storepulse
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

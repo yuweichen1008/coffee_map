@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
-import { supabase } from '@/lib/supabaseClient'
+import getDb from '@/lib/db'
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const { category, include_closed, offset, limit } = req.query as {
@@ -9,34 +9,40 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     limit?:          string
   }
 
-  if (!supabase) return res.status(200).json({ results: [], hasMore: false })
+  const sql = getDb()
+  if (!sql) return res.status(200).json({ results: [], hasMore: false })
 
   const pageSize   = Math.min(parseInt(limit  ?? '500') || 500, 1000)
   const pageOffset = Math.max(parseInt(offset ?? '0')   || 0,   0)
+  const showClosed = include_closed === 'true'
 
   try {
-    let query = supabase
-      .from('places')
-      .select('id,name,address,lat,lng,category,district,founded_date,closed_date,status')
-      .range(pageOffset, pageOffset + pageSize - 1)
+    // Build query dynamically by branching on filter combination
+    const rows = await (
+      category && showClosed ? sql`
+        SELECT id,name,address,lat,lng,category,district,founded_date,closed_date,status
+        FROM places WHERE category = ${category}
+        LIMIT ${pageSize} OFFSET ${pageOffset}
+      ` :
+      category ? sql`
+        SELECT id,name,address,lat,lng,category,district,founded_date,closed_date,status
+        FROM places WHERE category = ${category} AND status != 'closed'
+        LIMIT ${pageSize} OFFSET ${pageOffset}
+      ` :
+      showClosed ? sql`
+        SELECT id,name,address,lat,lng,category,district,founded_date,closed_date,status
+        FROM places
+        LIMIT ${pageSize} OFFSET ${pageOffset}
+      ` : sql`
+        SELECT id,name,address,lat,lng,category,district,founded_date,closed_date,status
+        FROM places WHERE status != 'closed'
+        LIMIT ${pageSize} OFFSET ${pageOffset}
+      `
+    )
 
-    if (include_closed !== 'true') {
-      // Default: exclude explicitly closed stores (home page, etc.)
-      query = query.neq('status', 'closed')
-    }
-    // When include_closed=true we return everything — the Time Machine
-    // handles active vs. closed rendering client-side.
-
-    if (category) query = query.eq('category', category)
-
-    const { data, error } = await query
-    if (error) throw error
-    return res.status(200).json({
-      results: data ?? [],
-      hasMore: (data?.length ?? 0) === pageSize,
-    })
+    return res.status(200).json({ results: rows, hasMore: rows.length === pageSize })
   } catch (e) {
-    console.error('Supabase places fetch failed', e)
+    console.error('[supabase/places]', e)
     return res.status(200).json({ results: [], hasMore: false })
   }
 }

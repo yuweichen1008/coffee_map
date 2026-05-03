@@ -50,6 +50,8 @@ type HawkerResult = {
   review_count: number | null
   lat: number
   lng: number
+  nea_grade: 'A' | 'B' | 'C' | null
+  nea_inspected: string | null
 }
 
 type MallResult = HawkerResult & { distance_m: number }
@@ -68,6 +70,25 @@ function Medal({ rank }: { rank: number }) {
   if (rank === 2) return <span className="text-base">🥈</span>
   if (rank === 3) return <span className="text-base">🥉</span>
   return <span className="text-xs font-bold text-gray-400 w-5 text-right tabular-nums">#{rank}</span>
+}
+
+// ── NEA hygiene grade badge ───────────────────────────────────────────────────
+const NEA_COLORS: Record<string, { bg: string; text: string; label: string }> = {
+  A: { bg: 'bg-green-900/60',  text: 'text-green-400',  label: 'A Grade' },
+  B: { bg: 'bg-yellow-900/60', text: 'text-yellow-400', label: 'B Grade' },
+  C: { bg: 'bg-red-900/60',    text: 'text-red-400',    label: 'C Grade' },
+}
+function NeaGrade({ grade, inspected }: { grade: string | null; inspected?: string | null }) {
+  if (!grade || !NEA_COLORS[grade]) return null
+  const { bg, text, label } = NEA_COLORS[grade]
+  return (
+    <span
+      title={`NEA Hygiene: ${label}${inspected ? ` · Inspected ${inspected}` : ''}`}
+      className={`text-xs font-bold px-1.5 py-0.5 rounded ${bg} ${text} shrink-0`}
+    >
+      {label}
+    </span>
+  )
 }
 
 // ── Star rating display ───────────────────────────────────────────────────────
@@ -226,7 +247,8 @@ const DiscoverPage: FC = () => {
                       </div>
 
                       {/* Stats */}
-                      <div className="flex items-center gap-3 shrink-0">
+                      <div className="flex items-center gap-2 shrink-0">
+                        <NeaGrade grade={h.nea_grade} inspected={h.nea_inspected} />
                         <Stars rating={h.rating} />
                         {h.review_count != null && (
                           <span className="text-xs text-gray-400 tabular-nums">

@@ -2,4 +2,4 @@ GEMINI.md
 .next
 node_modules
 .aiexclude
-.env.local
+.env.local.env.docker
