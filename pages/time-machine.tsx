@@ -2,8 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import Navbar from '@/components/Navbar'
-import { supabase } from '../lib/supabaseClient'
-import type { Session } from '@supabase/supabase-js'
 
 const PLAY_INTERVAL_MS  = 800
 const FALLBACK_CATS     = ['cafe', 'convenience_store', 'restaurant', 'bakery', 'beverage_store']
@@ -60,7 +58,6 @@ export default function TimeMachine() {
   const playTimer      = useRef<ReturnType<typeof setInterval> | null>(null)
   const allFeaturesRef = useRef<PlaceFeature[]>([])
 
-  const [session,       setSession]       = useState<Session | null>(null)
   const [isAdmin,       setIsAdmin]       = useState(false)
   const [category,      setCategory]      = useState('cafe')
   const [categories,    setCategories]    = useState<string[]>([])
@@ -78,15 +75,8 @@ export default function TimeMachine() {
 
   // ── Auth ─────────────────────────────────────────────────────────────────────
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      setIsAdmin(session?.user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL)
-    })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
-      setSession(s)
-      setIsAdmin(s?.user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL)
-    })
-    return () => subscription.unsubscribe()
+    const token = sessionStorage.getItem('storepulse_token')
+    setIsAdmin(!!token && token === process.env.NEXT_PUBLIC_ADMIN_SECRET)
   }, [])
 
   // ── Categories ───────────────────────────────────────────────────────────────
@@ -541,7 +531,7 @@ export default function TimeMachine() {
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <>
-      <Navbar isAdmin={isAdmin} userEmail={session?.user?.email} />
+      <Navbar isAdmin={isAdmin} userEmail={isAdmin ? (process.env.NEXT_PUBLIC_ADMIN_EMAIL ?? null) : null} />
 
       <div className="relative" style={{ height: 'calc(100vh - 64px)' }}>
         <div ref={mapContainer} className="w-full h-full" />

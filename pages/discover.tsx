@@ -1,4 +1,4 @@
-import { FC, useEffect, useState } from 'react'
+import { FC, useEffect, useRef, useState } from 'react'
 import Head from 'next/head'
 import Navbar from '../components/Navbar'
 
@@ -17,7 +17,7 @@ const MRT_STATIONS: MRTStation[] = [
   { name: 'Ang Mo Kio',     lat: 1.3700,  lng: 103.8496, line: 'NSL' },
   { name: 'Yishun',         lat: 1.4291,  lng: 103.8354, line: 'NSL' },
   { name: 'Woodlands',      lat: 1.4371,  lng: 103.7861, line: 'NSL' },
-  { name: 'Jurong East',    lat: 1.3331,  lng: 103.7424, line: 'EWL / NSL' },
+  { name: 'Jurong East',    lat: 1.3330,  lng: 103.7436, line: 'EWL / NSL' },
   { name: 'Tampines',       lat: 1.3529,  lng: 103.9451, line: 'EWL' },
   { name: 'Paya Lebar',     lat: 1.3175,  lng: 103.8925, line: 'EWL / CCL' },
   { name: 'Serangoon',      lat: 1.3501,  lng: 103.8729, line: 'NEL / CCL' },
@@ -32,6 +32,8 @@ const MRT_STATIONS: MRTStation[] = [
   { name: 'Toa Payoh',      lat: 1.3327,  lng: 103.8468, line: 'NSL' },
   { name: 'Changi Airport', lat: 1.3592,  lng: 103.9887, line: 'EWL' },
 ]
+
+const JURONG_EAST_MRT = MRT_STATIONS.find(s => s.name === 'Jurong East')!
 
 const SG_DISTRICTS = [
   'all', 'Orchard', 'Marina_Bay', 'Tanjong_Pagar', 'Chinatown', 'Bugis',
@@ -103,17 +105,27 @@ function Stars({ rating }: { rating: number | null }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 const DiscoverPage: FC = () => {
-  const [tab, setTab] = useState<'hawker' | 'malls'>('hawker')
+  const [tab, setTab] = useState<'hawker' | 'malls' | 'jurong'>('hawker')
   const [district, setDistrict] = useState('all')
   const [selectedMRT, setSelectedMRT] = useState<MRTStation>(MRT_STATIONS[0])
   const [radius, setRadius] = useState(1500)
-  const [hawkers, setHawkers] = useState<HawkerResult[]>([])
-  const [malls, setMalls] = useState<MallResult[]>([])
-  const [loading, setLoading] = useState(false)
+  const [hawkers, setHawkers]         = useState<HawkerResult[]>([])
+  const [malls, setMalls]             = useState<MallResult[]>([])
+  const [jurongHawkers, setJurongHawkers] = useState<HawkerResult[]>([])
+  const [jurongMalls,   setJurongMalls]   = useState<MallResult[]>([])
+  const [loading, setLoading]         = useState(false)
+  const [jurongLoading, setJurongLoading] = useState(false)
   const [hawkersLoaded, setHawkersLoaded] = useState(false)
+
+  // ── Picker state ──────────────────────────────────────────────────────────
+  const [pickedId, setPickedId] = useState<string | null>(null)
+  const [copied,   setCopied]   = useState(false)
+  const pickedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const rowRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   // ── Fetch hawkers ─────────────────────────────────────────────────────────
   useEffect(() => {
+    if (tab === 'jurong') return
     setLoading(true)
     const params = new URLSearchParams({ limit: '50' })
     if (district !== 'all') params.set('district', district)
@@ -122,9 +134,9 @@ const DiscoverPage: FC = () => {
       .then(j => { setHawkers(j.results ?? []); setHawkersLoaded(true) })
       .catch(() => setHawkersLoaded(true))
       .finally(() => setLoading(false))
-  }, [district])
+  }, [district, tab])
 
-  // ── Fetch malls when MRT or radius changes ────────────────────────────────
+  // ── Fetch malls ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (tab !== 'malls') return
     setLoading(true)
@@ -140,7 +152,110 @@ const DiscoverPage: FC = () => {
       .finally(() => setLoading(false))
   }, [tab, selectedMRT, radius])
 
+  // ── Fetch Jurong East (hawkers + malls in parallel) ───────────────────────
+  useEffect(() => {
+    if (tab !== 'jurong') return
+    setJurongLoading(true)
+    const hawkerParams = new URLSearchParams({ limit: '20', district: 'Jurong_East' })
+    const mallParams   = new URLSearchParams({
+      lat: String(JURONG_EAST_MRT.lat),
+      lng: String(JURONG_EAST_MRT.lng),
+      radius: '1500',
+    })
+    Promise.all([
+      fetch(`/api/hawker-rank?${hawkerParams}`).then(r => r.json()),
+      fetch(`/api/mrt-malls?${mallParams}`).then(r => r.json()),
+    ])
+      .then(([hj, mj]) => {
+        setJurongHawkers(hj.results ?? [])
+        setJurongMalls(mj.results ?? [])
+      })
+      .catch(() => {})
+      .finally(() => setJurongLoading(false))
+  }, [tab])
+
+  // ── Picker helpers ─────────────────────────────────────────────────────────
+  const pickRandom = (list: Array<{ id: string }>) => {
+    if (list.length === 0) return
+    if (pickedTimer.current) clearTimeout(pickedTimer.current)
+    const picked = list[Math.floor(Math.random() * list.length)]
+    setPickedId(picked.id)
+    setTimeout(() => rowRefs.current[picked.id]?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
+    pickedTimer.current = setTimeout(() => setPickedId(null), 3000)
+  }
+
+  const copyPrompt = (list: HawkerResult[], context: string) => {
+    const lines = list.slice(0, 15).map((h, i) => {
+      const grade = h.nea_grade ? ` [NEA ${h.nea_grade}]` : ''
+      const votes = h.review_count ? ` (${h.review_count.toLocaleString()} reviews)` : ''
+      return `${i + 1}. ${h.name}${h.district ? ' – ' + h.district.replace(/_/g, ' ') : ''}${h.rating ? ' – ★' + h.rating.toFixed(1) : ''}${votes}${grade}`
+    }).join('\n')
+
+    const prompt = `You are a Singapore food advisor. Here are the top hawker centres ${context} by popularity:\n\n${lines}\n\nWhich one should I visit and why? Give a single confident recommendation with brief reasoning.`
+    navigator.clipboard.writeText(prompt).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  }
+
   const insight = mallInsight(malls, radius)
+
+  // ── Shared hawker row renderer ─────────────────────────────────────────────
+  const HawkerRow = ({ h, rank }: { h: HawkerResult; rank: number }) => {
+    const isPicked = pickedId === h.id
+    return (
+      <div
+        key={h.id}
+        ref={el => { rowRefs.current[h.id] = el }}
+        className={`bg-gray-900 border rounded-xl px-4 py-3.5 flex items-center gap-4 transition-all duration-300 ${
+          isPicked
+            ? 'border-orange-500 shadow-[0_0_12px_rgba(249,115,22,0.35)]'
+            : 'border-white/8 hover:border-white/16'
+        }`}
+      >
+        <div className="w-8 flex items-center justify-center shrink-0">
+          <Medal rank={rank} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-sm truncate">{h.name}</p>
+          <p className="text-gray-400 text-xs truncate mt-0.5">
+            {h.district ? h.district.replace(/_/g, ' ') : ''}
+            {h.district && h.address ? ' · ' : ''}
+            {h.address ?? ''}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <NeaGrade grade={h.nea_grade} inspected={h.nea_inspected} />
+          <Stars rating={h.rating} />
+          {h.review_count != null && (
+            <span className="text-xs text-gray-400 tabular-nums">
+              {h.review_count.toLocaleString()} votes
+            </span>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Picker bar ────────────────────────────────────────────────────────────
+  const PickerBar = ({ list, promptContext }: { list: HawkerResult[]; promptContext: string }) => (
+    <div className="flex items-center gap-2 mb-4">
+      <button
+        onClick={() => pickRandom(list)}
+        disabled={list.length === 0}
+        className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-orange-500/20 border border-orange-500/40 text-orange-300 hover:bg-orange-500/30 transition disabled:opacity-40"
+      >
+        🎲 Surprise me
+      </button>
+      <button
+        onClick={() => copyPrompt(list, promptContext)}
+        disabled={list.length === 0}
+        className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10 transition disabled:opacity-40"
+      >
+        {copied ? '✓ Copied' : '📋 Ask Claude'}
+      </button>
+    </div>
+  )
 
   return (
     <>
@@ -157,7 +272,7 @@ const DiscoverPage: FC = () => {
           <p className="text-xs font-semibold uppercase tracking-widest text-orange-400 mb-2">Singapore Intelligence</p>
           <h1 className="text-3xl font-bold tracking-tight mb-1">Discover</h1>
           <p className="text-gray-400 text-sm">
-            Hawker centre rankings by popularity · Malls near any MRT station
+            Hawker centre rankings · Malls near any MRT · Jurong East focus
           </p>
         </div>
 
@@ -184,6 +299,16 @@ const DiscoverPage: FC = () => {
             >
               🏬 MRT & Malls
             </button>
+            <button
+              onClick={() => setTab('jurong')}
+              className={`px-4 py-2.5 text-sm font-semibold transition border-b-2 -mb-px ${
+                tab === 'jurong'
+                  ? 'border-blue-500 text-white'
+                  : 'border-transparent text-gray-400 hover:text-white'
+              }`}
+            >
+              🌆 Jurong East
+            </button>
           </div>
         </div>
 
@@ -192,8 +317,8 @@ const DiscoverPage: FC = () => {
           {/* ── Hawker Rankings tab ─────────────────────────────────────────── */}
           {tab === 'hawker' && (
             <div>
-              {/* District filter */}
-              <div className="flex items-center gap-3 mb-5">
+              {/* Controls */}
+              <div className="flex items-center gap-3 mb-4">
                 <label className="text-xs text-gray-400 shrink-0">Filter by district</label>
                 <select
                   value={district}
@@ -208,6 +333,10 @@ const DiscoverPage: FC = () => {
                 </select>
               </div>
 
+              {!loading && hawkers.length > 0 && (
+                <PickerBar list={hawkers} promptContext={district === 'all' ? 'across Singapore' : `in ${district.replace(/_/g, ' ')}`} />
+              )}
+
               {loading && (
                 <div className="text-gray-500 text-sm py-8 text-center">Loading hawker centres…</div>
               )}
@@ -218,7 +347,7 @@ const DiscoverPage: FC = () => {
                   <p className="text-gray-500 text-xs">
                     Seed data with:{' '}
                     <code className="bg-gray-800 px-2 py-0.5 rounded text-orange-300 text-xs">
-                      python3 seed_taipei_all_districts.py --city singapore --category &quot;hawker centre&quot;
+                      python3 scripts/fetch/fetch_places.py --city singapore --category &quot;hawker centre&quot;
                     </code>
                   </p>
                 </div>
@@ -226,38 +355,7 @@ const DiscoverPage: FC = () => {
 
               {!loading && hawkers.length > 0 && (
                 <div className="space-y-2">
-                  {hawkers.map((h, i) => (
-                    <div
-                      key={h.id}
-                      className="bg-gray-900 border border-white/8 rounded-xl px-4 py-3.5 flex items-center gap-4 hover:border-white/16 transition"
-                    >
-                      {/* Rank */}
-                      <div className="w-8 flex items-center justify-center shrink-0">
-                        <Medal rank={i + 1} />
-                      </div>
-
-                      {/* Details */}
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-sm truncate">{h.name}</p>
-                        <p className="text-gray-400 text-xs truncate mt-0.5">
-                          {h.district ? h.district.replace(/_/g, ' ') : ''}
-                          {h.district && h.address ? ' · ' : ''}
-                          {h.address ?? ''}
-                        </p>
-                      </div>
-
-                      {/* Stats */}
-                      <div className="flex items-center gap-2 shrink-0">
-                        <NeaGrade grade={h.nea_grade} inspected={h.nea_inspected} />
-                        <Stars rating={h.rating} />
-                        {h.review_count != null && (
-                          <span className="text-xs text-gray-400 tabular-nums">
-                            {h.review_count.toLocaleString()} votes
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                  {hawkers.map((h, i) => <HawkerRow key={h.id} h={h} rank={i + 1} />)}
                 </div>
               )}
             </div>
@@ -302,7 +400,7 @@ const DiscoverPage: FC = () => {
                 </div>
               </div>
 
-              {/* Consulting insight card */}
+              {/* Consulting insight */}
               {!loading && (
                 <div
                   className="rounded-xl border px-4 py-3 mb-5 text-sm"
@@ -327,54 +425,152 @@ const DiscoverPage: FC = () => {
               {!loading && malls.length === 0 && (
                 <div className="bg-gray-900 border border-white/8 rounded-xl p-8 text-center">
                   <p className="text-gray-400 text-sm mb-2">No shopping malls found within {(radius / 1000).toFixed(1)} km.</p>
-                  <p className="text-gray-500 text-xs">
-                    Seed data with:{' '}
-                    <code className="bg-gray-800 px-2 py-0.5 rounded text-orange-300 text-xs">
-                      python3 seed_taipei_all_districts.py --city singapore --category &quot;shopping mall&quot;
-                    </code>
-                  </p>
+                  <p className="text-gray-500 text-xs">Try increasing the radius or selecting a different MRT station.</p>
                 </div>
               )}
 
               {!loading && malls.length > 0 && (
                 <div className="space-y-2">
-                  {malls.map((m, i) => (
-                    <div
-                      key={m.id}
-                      className="bg-gray-900 border border-white/8 rounded-xl px-4 py-3.5 flex items-center gap-4 hover:border-white/16 transition"
-                    >
-                      {/* Rank */}
-                      <div className="w-8 flex items-center justify-center shrink-0">
-                        <Medal rank={i + 1} />
-                      </div>
-
-                      {/* Details */}
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-sm truncate">{m.name}</p>
-                        <p className="text-gray-400 text-xs truncate mt-0.5">
-                          {m.district ? m.district.replace(/_/g, ' ') : ''}
-                          {m.district && m.address ? ' · ' : ''}
-                          {m.address ?? ''}
-                        </p>
-                      </div>
-
-                      {/* Distance + stats */}
-                      <div className="flex items-center gap-3 shrink-0">
-                        <span className="text-xs font-semibold text-purple-400">
-                          {m.distance_m < 1000
-                            ? `${m.distance_m} m`
-                            : `${(m.distance_m / 1000).toFixed(1)} km`}
-                        </span>
-                        <Stars rating={m.rating} />
-                        {m.review_count != null && (
-                          <span className="text-xs text-gray-400 tabular-nums">
-                            {m.review_count.toLocaleString()}
+                  {malls.map((m, i) => {
+                    const isPicked = pickedId === m.id
+                    return (
+                      <div
+                        key={m.id}
+                        ref={el => { rowRefs.current[m.id] = el }}
+                        className={`bg-gray-900 border rounded-xl px-4 py-3.5 flex items-center gap-4 transition-all duration-300 ${
+                          isPicked
+                            ? 'border-orange-500 shadow-[0_0_12px_rgba(249,115,22,0.35)]'
+                            : 'border-white/8 hover:border-white/16'
+                        }`}
+                      >
+                        <div className="w-8 flex items-center justify-center shrink-0">
+                          <Medal rank={i + 1} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-sm truncate">{m.name}</p>
+                          <p className="text-gray-400 text-xs truncate mt-0.5">
+                            {m.district ? m.district.replace(/_/g, ' ') : ''}
+                            {m.district && m.address ? ' · ' : ''}
+                            {m.address ?? ''}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="text-xs font-semibold text-purple-400">
+                            {m.distance_m < 1000
+                              ? `${m.distance_m} m`
+                              : `${(m.distance_m / 1000).toFixed(1)} km`}
                           </span>
-                        )}
+                          <Stars rating={m.rating} />
+                          {m.review_count != null && (
+                            <span className="text-xs text-gray-400 tabular-nums">
+                              {m.review_count.toLocaleString()}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Jurong East tab ──────────────────────────────────────────────── */}
+          {tab === 'jurong' && (
+            <div>
+              {/* Location context card */}
+              <div className="rounded-xl border border-blue-500/30 bg-blue-500/8 px-4 py-3 mb-6 text-sm flex items-start gap-3">
+                <span className="text-lg mt-0.5">🌆</span>
+                <div>
+                  <p className="font-semibold text-blue-300 mb-0.5">Jurong East Focus</p>
+                  <p className="text-gray-400 text-xs">
+                    EWL / NSL interchange hub · Regional centre · JEM, Westgate, IMM nearby
+                    <span className="ml-2 text-blue-400/60">1.3330°N, 103.7436°E</span>
+                  </p>
+                </div>
+              </div>
+
+              {jurongLoading && (
+                <div className="text-gray-500 text-sm py-8 text-center">Loading Jurong East intelligence…</div>
+              )}
+
+              {!jurongLoading && (
+                <>
+                  {/* Hawker centres section */}
+                  <div className="mb-8">
+                    <div className="flex items-center justify-between mb-3">
+                      <h2 className="text-sm font-bold text-gray-200 flex items-center gap-2">
+                        🍜 <span>Hawker Centres</span>
+                        <span className="text-xs text-gray-500 font-normal">Jurong East district</span>
+                      </h2>
+                    </div>
+
+                    {jurongHawkers.length > 0 && (
+                      <PickerBar list={jurongHawkers} promptContext="in Jurong East" />
+                    )}
+
+                    {jurongHawkers.length === 0 ? (
+                      <p className="text-gray-500 text-sm py-4 text-center">No hawker data for Jurong East yet.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {jurongHawkers.map((h, i) => <HawkerRow key={h.id} h={h} rank={i + 1} />)}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Malls section */}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <h2 className="text-sm font-bold text-gray-200 flex items-center gap-2">
+                        🏬 <span>Shopping Malls</span>
+                        <span className="text-xs text-gray-500 font-normal">Within 1.5 km of Jurong East MRT</span>
+                      </h2>
+                    </div>
+
+                    {jurongMalls.length === 0 ? (
+                      <p className="text-gray-500 text-sm py-4 text-center">No mall data near Jurong East yet.</p>
+                    ) : (
+                      <>
+                        <div className="rounded-xl border border-amber-500/25 bg-amber-500/8 px-4 py-2.5 mb-3 text-xs text-gray-300">
+                          <span className="font-semibold text-amber-400">Consulting signal: </span>
+                          {jurongMalls.length >= 3
+                            ? 'High mall density — premium retail zone with strong foot traffic anchors'
+                            : 'Moderate mall presence — established catchment with growth potential'}
+                        </div>
+                        <div className="space-y-2">
+                          {jurongMalls.map((m, i) => {
+                            const isPicked = pickedId === m.id
+                            return (
+                              <div
+                                key={m.id}
+                                ref={el => { rowRefs.current[m.id] = el }}
+                                className={`bg-gray-900 border rounded-xl px-4 py-3.5 flex items-center gap-4 transition-all duration-300 ${
+                                  isPicked
+                                    ? 'border-orange-500 shadow-[0_0_12px_rgba(249,115,22,0.35)]'
+                                    : 'border-white/8 hover:border-white/16'
+                                }`}
+                              >
+                                <div className="w-8 flex items-center justify-center shrink-0">
+                                  <Medal rank={i + 1} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-semibold text-sm truncate">{m.name}</p>
+                                  <p className="text-gray-400 text-xs truncate mt-0.5">{m.address ?? ''}</p>
+                                </div>
+                                <div className="flex items-center gap-3 shrink-0">
+                                  <span className="text-xs font-semibold text-purple-400">
+                                    {m.distance_m < 1000 ? `${m.distance_m} m` : `${(m.distance_m / 1000).toFixed(1)} km`}
+                                  </span>
+                                  <Stars rating={m.rating} />
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </>
               )}
             </div>
           )}

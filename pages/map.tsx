@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
-import { supabase } from '../lib/supabaseClient'
-import type { Session } from '@supabase/supabase-js'
 import Link from 'next/link'
 import Navbar from '@/components/Navbar'
 import ErrorBanner from '../components/Error'
@@ -103,12 +101,10 @@ type Place = {
 export default function Home() {
   const mapContainer   = useRef<HTMLDivElement | null>(null)
   const map            = useRef<mapboxgl.Map | null>(null)
-  const sessionRef     = useRef<Session | null>(null)
   const allPlacesRef   = useRef<Place[]>([])
   const popupRef       = useRef<mapboxgl.Popup | null>(null)
   const moveEndBound   = useRef<(() => void) | null>(null)
 
-  const [session,          setSession]          = useState<Session | null>(null)
   const [isAdmin,          setIsAdmin]          = useState(false)
   const [categories,       setCategories]       = useState<string[]>([])
   const [selectedCategory, setSelectedCategory] = useState('cafe')
@@ -122,17 +118,8 @@ export default function Home() {
 
   // ── Auth ─────────────────────────────────────────────────────────────────────
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      sessionRef.current = session
-      setIsAdmin(session?.user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL)
-    })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
-      setSession(s)
-      sessionRef.current = s
-      setIsAdmin(s?.user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL)
-    })
-    return () => subscription.unsubscribe()
+    const token = sessionStorage.getItem('storepulse_token')
+    setIsAdmin(!!token && token === process.env.NEXT_PUBLIC_ADMIN_SECRET)
   }, [])
 
   // ── Categories ───────────────────────────────────────────────────────────────
@@ -380,7 +367,7 @@ export default function Home() {
 
   // ── Research this area (admin only, hits Google API, then re-loads) ───────────
   const researchArea = useCallback(async () => {
-    const token = sessionRef.current?.access_token
+    const token = typeof window !== 'undefined' ? sessionStorage.getItem('storepulse_token') : null
     if (!token || !map.current) return
     setResearching(true)
     setLoadError(null)
@@ -403,7 +390,7 @@ export default function Home() {
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <>
-      <Navbar isAdmin={isAdmin} userEmail={session?.user?.email} />
+      <Navbar isAdmin={isAdmin} userEmail={isAdmin ? (process.env.NEXT_PUBLIC_ADMIN_EMAIL ?? null) : null} />
 
       <div className="h-[calc(100vh-64px)] flex flex-col md:flex-row">
 

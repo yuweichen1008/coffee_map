@@ -1,201 +1,163 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabaseClient'
-import type { Session } from '@supabase/supabase-js'
 import Navbar from '@/components/Navbar'
 import Link from 'next/link'
 
+type Place = {
+  id: string
+  name: string
+  address: string | null
+  category: string | null
+  founded_date: string | null
+}
+
 export default function AdminPage() {
-  const [session, setSession] = useState<Session | null>(null)
-  const [isAdmin, setIsAdmin] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [places, setPlaces] = useState<any[]>([])
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editData, setEditData] = useState<any>({})
-  const [message, setMessage] = useState('')
+  const [isAdmin, setIsAdmin]     = useState(false)
+  const [loading, setLoading]     = useState(true)
+  const [places,  setPlaces]      = useState<Place[]>([])
+  const [editing, setEditing]     = useState<string | null>(null)
+  const [editData, setEditData]   = useState<Partial<Place>>({})
+  const [message,  setMessage]    = useState('')
+
+  const getToken = () => typeof window !== 'undefined' ? sessionStorage.getItem('storepulse_token') : null
 
   useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      setSession(session)
-
-      if (session?.user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
-        setIsAdmin(true)
-        await fetchPlaces()
-      } else {
-        setIsAdmin(false)
-      }
-      setLoading(false)
-    }
-
-    checkAuth()
+    const token = getToken()
+    const admin = !!token && token === process.env.NEXT_PUBLIC_ADMIN_SECRET
+    setIsAdmin(admin)
+    if (admin) fetchPlaces(token!)
+    setLoading(false)
   }, [])
 
-  const fetchPlaces = async () => {
-    const { data, error } = await supabase.from('places').select('*').limit(100)
-    if (error) {
-      setMessage('Failed to fetch places: ' + error.message)
-    } else {
-      setPlaces(data || [])
-    }
-  }
-
-  const handleEdit = (place: any) => {
-    setEditingId(place.id)
-    setEditData({
-      name: place.name,
-      founded_date: place.founded_date || '',
-      address: place.address || '',
-      category: place.category || '',
+  const fetchPlaces = async (token: string) => {
+    const res = await fetch('/api/supabase/places?limit=100&offset=0', {
+      headers: { Authorization: `Bearer ${token}` },
     })
+    const json = await res.json()
+    setPlaces((json.results ?? []) as Place[])
   }
 
   const handleSave = async () => {
-    if (!editingId) return
-    const { error } = await supabase
-      .from('places')
-      .update(editData)
-      .eq('id', editingId)
-    if (error) {
-      setMessage('Failed to update: ' + error.message)
-    } else {
+    if (!editing) return
+    const token = getToken()
+    const res = await fetch(`/api/admin/place?id=${editing}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(editData),
+    })
+    if (res.ok) {
       setMessage('Updated successfully!')
-      setEditingId(null)
-      await fetchPlaces()
+      setEditing(null)
+      fetchPlaces(token!)
+    } else {
+      setMessage('Update failed.')
     }
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure?')) return
-    const { error } = await supabase.from('places').delete().eq('id', id)
-    if (error) {
-      setMessage('Failed to delete: ' + error.message)
+    if (!confirm('Delete this place?')) return
+    const token = getToken()
+    const res = await fetch(`/api/admin/place?id=${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (res.ok) {
+      setMessage('Deleted.')
+      fetchPlaces(token!)
     } else {
-      setMessage('Deleted successfully!')
-      await fetchPlaces()
+      setMessage('Delete failed.')
     }
   }
 
   const handleSyncFromGoogle = async () => {
-    setMessage('Syncing from Google Places...')
-    try {
-      // Example: sync Neihu cafes
-      const res = await fetch('/api/places?query=cafe&lat=25.0667&lng=121.5833&radius=5000&maxPages=2&force_refresh=true', {
-        headers: { 'Authorization': `Bearer ${session?.access_token}` }
-      })
-      const data = await res.json()
-      if (res.ok) {
-        setMessage(`Synced ${data.supabase?.upsert?.count || 0} places from Google!`)
-        await fetchPlaces()
-      } else {
-        setMessage('Sync failed: ' + data.error)
-      }
-    } catch (e: any) {
-      setMessage('Sync error: ' + String(e.message))
+    const token = getToken()
+    setMessage('Syncing…')
+    const res = await fetch(
+      `/api/places?query=cafe&lat=25.0667&lng=121.5833&radius=5000&maxPages=2&force_refresh=true`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    )
+    const data = await res.json()
+    if (res.ok) {
+      setMessage(`Synced ${data.db?.upsert?.count ?? 0} places from Google!`)
+      fetchPlaces(token!)
+    } else {
+      setMessage('Sync failed: ' + data.error)
     }
   }
 
-  if (loading) return <div className="p-4">Loading...</div>
+  if (loading) return <div className="p-4 text-white">Loading…</div>
   if (!isAdmin) {
     return (
       <div className="p-4 text-center">
-        <h2 className="text-xl font-bold text-red-600">Access Denied</h2>
-        <p>Only admins can access this page. Please use your admin email to login.</p>
-        <Link href="/" className="text-blue-600 hover:underline">Back to home</Link>
+        <h2 className="text-xl font-bold text-red-500">Access Denied</h2>
+        <p className="text-gray-400">Admin access required.</p>
+        <Link href="/login" className="text-orange-400 hover:underline">Login</Link>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navbar isAdmin={true} userEmail={session?.user?.email} />
+    <div className="min-h-screen bg-gray-950 text-white">
+      <Navbar isAdmin={true} userEmail={process.env.NEXT_PUBLIC_ADMIN_EMAIL ?? null} />
       <div className="max-w-7xl mx-auto p-6">
-        <h1 className="text-3xl font-bold mb-6">Admin CMS - Manage Places</h1>
+        <h1 className="text-3xl font-bold mb-6">Admin — Manage Places</h1>
 
-        {message && <div className="mb-4 p-3 bg-blue-100 text-blue-800 rounded">{message}</div>}
+        {message && <div className="mb-4 p-3 bg-orange-900/50 text-orange-300 rounded">{message}</div>}
 
         <button
           onClick={handleSyncFromGoogle}
-          className="mb-4 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+          className="mb-4 bg-green-700 text-white px-4 py-2 rounded hover:bg-green-600"
         >
-          🔄 Sync from Google Places (Neihu)
+          🔄 Sync from Google Places
         </button>
 
-        <div className="overflow-x-auto bg-white rounded shadow">
-          <table className="w-full border-collapse">
-            <thead className="bg-gray-100 border-b">
+        <div className="overflow-x-auto bg-gray-900 rounded border border-white/10">
+          <table className="w-full border-collapse text-sm">
+            <thead className="bg-gray-800 border-b border-white/10">
               <tr>
                 <th className="px-4 py-2 text-left">Name</th>
                 <th className="px-4 py-2 text-left">Address</th>
                 <th className="px-4 py-2 text-left">Category</th>
-                <th className="px-4 py-2 text-left">Founded Date</th>
+                <th className="px-4 py-2 text-left">Founded</th>
                 <th className="px-4 py-2 text-left">Actions</th>
               </tr>
             </thead>
             <tbody>
               {places.map((place) => (
-                <tr key={place.id} className="border-b hover:bg-gray-50">
-                  {editingId === place.id ? (
+                <tr key={place.id} className="border-b border-white/5 hover:bg-white/5">
+                  {editing === place.id ? (
                     <>
                       <td className="px-4 py-2">
-                        <input
-                          type="text"
-                          value={editData.name}
-                          onChange={(e) => setEditData({ ...editData, name: e.target.value })}
-                          className="w-full p-1 border rounded"
-                        />
+                        <input value={editData.name ?? ''} onChange={e => setEditData({ ...editData, name: e.target.value })}
+                          className="w-full p-1 bg-gray-800 border border-white/20 rounded text-white" />
                       </td>
                       <td className="px-4 py-2">
-                        <input
-                          type="text"
-                          value={editData.address}
-                          onChange={(e) => setEditData({ ...editData, address: e.target.value })}
-                          className="w-full p-1 border rounded text-sm"
-                        />
+                        <input value={editData.address ?? ''} onChange={e => setEditData({ ...editData, address: e.target.value })}
+                          className="w-full p-1 bg-gray-800 border border-white/20 rounded text-white text-xs" />
                       </td>
                       <td className="px-4 py-2">
-                        <input
-                          type="text"
-                          value={editData.category}
-                          onChange={(e) => setEditData({ ...editData, category: e.target.value })}
-                          className="w-full p-1 border rounded text-sm"
-                        />
+                        <input value={editData.category ?? ''} onChange={e => setEditData({ ...editData, category: e.target.value })}
+                          className="w-full p-1 bg-gray-800 border border-white/20 rounded text-white text-xs" />
                       </td>
                       <td className="px-4 py-2">
-                        <input
-                          type="date"
-                          value={editData.founded_date}
-                          onChange={(e) => setEditData({ ...editData, founded_date: e.target.value })}
-                          className="w-full p-1 border rounded text-sm"
-                        />
+                        <input type="date" value={editData.founded_date ?? ''} onChange={e => setEditData({ ...editData, founded_date: e.target.value })}
+                          className="w-full p-1 bg-gray-800 border border-white/20 rounded text-white text-xs" />
                       </td>
                       <td className="px-4 py-2 space-x-2">
-                        <button onClick={handleSave} className="bg-blue-600 text-white px-2 py-1 rounded text-sm hover:bg-blue-700">
-                          Save
-                        </button>
-                        <button onClick={() => setEditingId(null)} className="bg-gray-400 text-white px-2 py-1 rounded text-sm hover:bg-gray-500">
-                          Cancel
-                        </button>
+                        <button onClick={handleSave} className="bg-blue-600 text-white px-2 py-1 rounded text-xs hover:bg-blue-500">Save</button>
+                        <button onClick={() => setEditing(null)} className="bg-gray-600 text-white px-2 py-1 rounded text-xs hover:bg-gray-500">Cancel</button>
                       </td>
                     </>
                   ) : (
                     <>
                       <td className="px-4 py-2 font-semibold">{place.name}</td>
-                      <td className="px-4 py-2 text-sm text-gray-600">{place.address || '—'}</td>
-                      <td className="px-4 py-2 text-sm">{place.category || '—'}</td>
-                      <td className="px-4 py-2 text-sm">{place.founded_date || '—'}</td>
+                      <td className="px-4 py-2 text-gray-400">{place.address || '—'}</td>
+                      <td className="px-4 py-2">{place.category || '—'}</td>
+                      <td className="px-4 py-2 text-gray-400">{place.founded_date || '—'}</td>
                       <td className="px-4 py-2 space-x-2">
-                        <button
-                          onClick={() => handleEdit(place)}
-                          className="bg-yellow-600 text-white px-2 py-1 rounded text-sm hover:bg-yellow-700"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDelete(place.id)}
-                          className="bg-red-600 text-white px-2 py-1 rounded text-sm hover:bg-red-700"
-                        >
-                          Delete
-                        </button>
+                        <button onClick={() => { setEditing(place.id); setEditData(place) }}
+                          className="bg-yellow-700 text-white px-2 py-1 rounded text-xs hover:bg-yellow-600">Edit</button>
+                        <button onClick={() => handleDelete(place.id)}
+                          className="bg-red-700 text-white px-2 py-1 rounded text-xs hover:bg-red-600">Delete</button>
                       </td>
                     </>
                   )}
@@ -204,7 +166,7 @@ export default function AdminPage() {
             </tbody>
           </table>
         </div>
-        {places.length === 0 && <p className="text-center text-gray-500 mt-6">No places yet. Sync from Google to get started!</p>}
+        {places.length === 0 && <p className="text-center text-gray-500 mt-6">No places. Sync from Google to get started.</p>}
       </div>
     </div>
   )

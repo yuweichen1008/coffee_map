@@ -1,10 +1,10 @@
 import { FC } from 'react'
 import Link from 'next/link'
-import { supabase } from '../lib/supabaseClient'
 
 const Navbar: FC<{ isAdmin?: boolean; userEmail?: string | null }> = ({ isAdmin, userEmail }) => {
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
+  const handleLogout = () => {
+    if (typeof window !== 'undefined') sessionStorage.removeItem('storepulse_token')
+    window.location.href = '/login'
   }
 
   return (

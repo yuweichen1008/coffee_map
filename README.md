@@ -1,76 +1,60 @@
-# Taipei Business Map
+# StorePulse — Singapore Retail Intelligence
 
-Location intelligence for business owners. Visualize where stores are thriving, where businesses have failed, and where the next opportunity lies — across any category in Taipei.
+Location intelligence platform for Singapore SMEs and angel investor pitch. Visualize where stores thrive, where businesses fail, and where the next opportunity lies — powered by Singapore government open data.
 
 ## What It Does
 
-- **Spot opportunities:** See which districts are undersaturated for a given store type before committing to a lease.
-- **Avoid dead zones:** Areas with a high concentration of closed businesses are flagged with ☠ markers and a dark heatmap — a graveyard signal to avoid.
-- **Track growth over time:** The Time Machine replays how any category expanded across Taipei year by year, with warm/cold color encoding for saturated vs. growing zones.
-- **Understand the competitive landscape:** Switch between cafes, convenience stores, restaurants, bakeries, and more — same map, same tools.
-- **Pan to discover:** The store list updates in real time as you move the map — no search needed.
-
-## Key Features
-
-| Feature | Description |
-|---|---|
-| **Interactive Map** | Supabase-backed map with viewport-driven store list |
-| **Heatmap** | Cold-blue = established zones · Warm-red = recent growth |
-| **Dead Zones** | ☠ skull markers + dark heatmap for permanently-closed businesses |
-| **Time Machine** | Year slider replays store openings and closures; dynamic range per category |
-| **Multi-category** | Tabs for cafe, convenience store, restaurant, bakery, beverage store, and more |
-| **Angel Zone** *(planned)* | Opportunity scoring: high foot-traffic × low competition × low failure rate |
-| **Admin CMS** | Force-sync from Google, inline edit/delete, research-on-demand button |
-| **User Reports** | Community contributions with gamification points |
+- **Michelin map** — All Singapore Michelin-starred restaurants with tenure timelines, star ascension history, and vintage filter
+- **Discover** — Hawker centre rankings by review count + NEA grade, MRT mall finder, Jurong East quick-access tab, and a random picker with Claude prompt export
+- **Dead Zones** — Areas with high closed-store density flagged with ☠ markers and dark heatmap
+- **Time Machine** — Replays store openings and closures year by year
+- **Pitch deck** — Live investor stats pulled from the database
 
 ## Tech Stack
 
 | Layer | Technology |
 |---|---|
-| Framework | [Next.js 13](https://nextjs.org/) + TypeScript |
-| Database | [Supabase](https://supabase.io/) (PostgreSQL + PostGIS) |
+| Framework | [Next.js 14](https://nextjs.org/) + TypeScript |
+| Database | PostgreSQL + PostGIS (Docker locally / Cloud SQL in production) |
+| DB client | [postgres.js](https://github.com/porsager/postgres) — tagged template SQL, no ORM |
 | Map | [Mapbox GL JS](https://www.mapbox.com/) |
 | Styling | [Tailwind CSS](https://tailwindcss.com/) |
-| Data source | Google Places API + Taiwan Government Open Data |
-| Scripting | Python 3 (3-stage ingestion pipeline) |
+| Auth | Custom bearer token (`ADMIN_SECRET`) + sessionStorage on client |
+| Data sources | Google Places API · NEA · LTA DataMall · OneMap · ACRA |
+| Scripting | Python 3 (ETL pipeline in `scripts/`) |
+| Deployment | GCP Cloud Run (asia-southeast1) via Cloud Build |
+
+## Pages
+
+| Route | Description |
+|---|---|
+| `/map` | Mapbox heatmap + signal intelligence panel, admin Google refresh |
+| `/discover` | Hawker rankings, MRT mall finder, Jurong East tab, 🎲 random picker |
+| `/michelin` | Michelin restaurants with animated tenure bars + vintage filter |
+| `/time-machine` | Year-by-year store opening/closure trends |
+| `/pitch` | VC snapshot with live DB stats |
+| `/intro` | B2B landing page |
+| `/login` | Admin login (email → `/api/auth/login` → sessionStorage token) |
+| `/admin` | Admin CRUD for places (bearer token gated) |
 
 ## Architecture
 
 ```
-Google Places API                  data.gov.tw (Taiwan Gov)
-       │                                    │
-       ▼                                    ▼
-┌─────────────────────────────────────────────────────┐
-│  Python ingestion pipeline (scripts/)               │
-│                                                     │
-│  Stage 1: seed_taipei_all_districts.py              │
-│    · 3×3 grid search per district (covers borders)  │
-│    · Captures CLOSED_PERMANENTLY → dead zones       │
-│                                                     │
-│  Stage 2: update_founded_dates.py                   │
-│    · Backfills founded_date via oldest review       │
-│                                                     │
-│  Stage 3: fetch_closed_businesses.py                │
-│    · Re-checks active places for new closures       │
-│    · Reconciles 廢止日期 from gov CSV (verified)    │
-└─────────────────────────────────────────────────────┘
-       │
-       ▼
-Supabase (PostgreSQL + PostGIS)
-  places · categories · districts
-  zone_density (materialized view)       ← active store density
-  dead_zone_clusters (materialized view) ← closure-rate per grid cell
-       │
-       ▼
-Next.js API routes (pages/api/)
-  /api/supabase/places  – category fetch, include_closed flag
-  /api/places           – spatial search + admin Google sync
-  /api/categories       – live category list from DB
-       │
-       ▼
-Mapbox GL JS
-  Home page  – viewport-driven list, hover highlight, heatmap
-  Time Machine – year slider, warm/cold layers, dead zone ☠ overlay
+Browser (Next.js pages)
+  └─ Pages call /api/* routes — never touch the DB directly
+
+API Routes (pages/api/)
+  └─ All DB access via getDb() from lib/db.ts (postgres.js singleton)
+  └─ Admin writes: Authorization: Bearer <ADMIN_SECRET>
+
+PostgreSQL + PostGIS
+  └─ Cloud SQL (production) · Docker (local)
+  └─ places — core store table (14 categories, SG + Taipei)
+  └─ sg_hawker_centres, sg_bus_stops, sg_planning_areas, sg_hdb_prices
+  └─ zone_density, dead_zone_clusters (materialized views)
+
+Python ETL (scripts/)
+  └─ Google Places scrape, NEA hawker data, LTA bus stops, OneMap, ACRA
 ```
 
 ## Getting Started
@@ -78,276 +62,142 @@ Mapbox GL JS
 ### Prerequisites
 
 - Node.js 18+
-- A [Supabase](https://app.supabase.com) project (free tier works)
-- A [Mapbox](https://account.mapbox.com) account (free tier works)
-- A [Google Maps Platform](https://console.cloud.google.com) project with Places API enabled
+- Docker (for local PostgreSQL + PostGIS)
+- A [Mapbox](https://account.mapbox.com) account
 
 ### Environment Variables
 
-Create `.env.local` in the project root:
+Copy `.env.local.example` to `.env.local` and fill in:
 
 ```text
-# Mapbox
-NEXT_PUBLIC_MAPBOX_TOKEN=pk.your_mapbox_token
+# PostgreSQL connection
+DATABASE_URL=postgres://storepulse:storepulse@localhost:5432/storepulse
 
-# Google Maps — unrestricted key for server scripts; browser key for client
-NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=your_browser_google_key
-GOOGLE_MAPS_API_KEY=your_server_google_key
+# Admin auth — must match on both sides
+ADMIN_SECRET=generate-with-openssl-rand-hex-32
+NEXT_PUBLIC_ADMIN_SECRET=same-value-as-ADMIN_SECRET
+NEXT_PUBLIC_ADMIN_EMAIL=you@example.com
 
-# Supabase
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=your_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key   # never commit this
+# Map rendering
+NEXT_PUBLIC_MAPBOX_TOKEN=pk.eyJ...
 
-# Admin
-NEXT_PUBLIC_ADMIN_EMAIL=your-admin-email@example.com
+# Google Places API (server-side ETL only)
+GOOGLE_MAPS_API_KEY=AIzaSy...
+
+# LTA DataMall (bus stops ETL)
+LTA_API_KEY=...
 ```
 
-### Database Setup
-
-1. Open your Supabase project → **SQL Editor**
-2. Paste `db/init_all.sql` and run — creates all tables, indexes, materialized views, and seed categories
-3. Verify with: `SELECT COUNT(*) FROM public.categories;` (should return 6)
-
-### Run Locally
+### Local Dev with Docker
 
 ```bash
+# Start PostgreSQL + PostGIS
+docker-compose up -d
+
+# Run schema + seed
+docker exec -i storepulse-db psql -U storepulse storepulse < db/init_all.sql
+docker exec -i storepulse-db psql -U storepulse storepulse < db/sg_enrichment.sql
+
+# Start Next.js
 npm install
 npm run dev
 # → http://localhost:3000
 ```
 
+### Database Setup (manual)
+
+```bash
+# Connect and run schema
+psql $DATABASE_URL < db/init_all.sql
+psql $DATABASE_URL < db/sg_enrichment.sql
+```
+
 ## Data Pipeline
 
-### Stage 1 — Scrape Google Places (active + dead stores)
+### Seed Singapore stores
 
 ```bash
-cd scripts
-pip install googlemaps supabase-py python-dotenv
+cd scripts/fetch
+pip install -r requirements.txt
 
-# All categories, 3×3 grid per district, includes permanently-closed stores
-python seed_taipei_all_districts.py --category "coffee shop"
-python seed_taipei_all_districts.py --category "convenience store"
-python seed_taipei_all_districts.py --category "restaurant"
+python fetch_places.py --city singapore --category "coffee shop"
+python fetch_places.py --city singapore --category "hawker centre"
 # etc.
-
-# Dry run to preview without writing:
-python seed_taipei_all_districts.py --dry-run
 ```
 
-**What it does:**
-- Divides each of the 12 Taipei districts into a **3×3 grid** of overlapping search cells — covers district borders and large districts (Neihu, Beitou, Wenshan) that a single-center search misses
-- Maps Google's `business_status` field: `CLOSED_PERMANENTLY` → `status='closed'` + `closed_date=today`
-- Upserts on `google_place_id` — safe to re-run
-
-### Stage 2 — Backfill founding dates
+### Singapore government data
 
 ```bash
-python update_founded_dates.py [--limit 200] [--dry-run]
+python fetch_sg_govdata.py      # NEA hawker centres + grades
+python fetch_lta_busstops.py    # LTA bus stops → bus_stops_400m
+python fetch_onemap_boundaries.py  # 55 planning area polygons
+python fetch_acra.py            # ACRA company registration/closure
 ```
 
-For every place with `founded_date IS NULL`, calls the Places Details API and uses the oldest review timestamp as a proxy for opening date. Sets `founded_date_confidence='estimated'`.
+### Refresh materialized views
 
-### Stage 3 — Enrich dead-zone data
-
-```bash
-pip install rapidfuzz
-
-# Google-only: re-check all active places for new closures
-python fetch_closed_businesses.py --source google --limit 500
-
-# Government CSV reconciliation (most accurate closed_date):
-# 1. Download from https://data.gov.tw/dataset/6038 (Taipei commercial)
-#    or           https://data.gov.tw/dataset/6464 (national company)
-# 2. Filter to 臺北市 rows, save as taipei_biz.csv
-python fetch_closed_businesses.py --source gov --gov-csv taipei_biz.csv
-
-# Both sources (recommended for production):
-python fetch_closed_businesses.py --source all --gov-csv taipei_biz.csv --dry-run
-```
-
-**Reconciliation logic:**
-- **Google Details API**: detects `CLOSED_PERMANENTLY`; uses last-review timestamp as `closed_date` proxy
-- **Government CSV**: matches records by fuzzy name similarity (rapidfuzz ≥ 70) — handles English ↔ Chinese (many chains embed their English name in the Chinese record, e.g. `路易莎咖啡 LOUISA COFFEE`)
-- Where a government match is found, `closed_date` is overwritten with the legal `廢止日期` and `founded_date_confidence` is set to `'verified'`
-
-**Refresh materialized views after Stage 3:**
 ```sql
 REFRESH MATERIALIZED VIEW public.zone_density;
 REFRESH MATERIALIZED VIEW public.dead_zone_clusters;
 ```
 
-## Database Schema
+## Admin Auth
 
-### `places`
+Authentication uses a bearer token, not Supabase. Login flow:
 
-| Column | Type | Description |
-|---|---|---|
-| `id` | uuid | Primary key |
-| `google_place_id` | text | Unique Google Place ID |
-| `name` | text | Store name |
-| `address` | text | Street address |
-| `district` | text | Taipei district (denormalized) |
-| `lat` / `lng` | float | GPS coordinates |
-| `location` | geometry(Point, 4326) | PostGIS point — spatially indexed |
-| `category` | text | Category slug |
-| `status` | text | `active` \| `closed` \| `relocated` |
-| `founded_date` | date | Estimated opening date |
-| `founded_date_confidence` | text | `estimated` \| `verified` \| `unknown` |
-| `closed_date` | date | Legal or estimated closure date |
-| `rating` | real | Google rating 1.0–5.0 |
-| `review_count` | integer | Number of Google reviews |
-| `google_data` | jsonb | Raw Google Places payload |
+1. User POSTs email to `/api/auth/login`
+2. Server validates against `NEXT_PUBLIC_ADMIN_EMAIL`, returns `ADMIN_SECRET`
+3. Client stores token in `sessionStorage` as `storepulse_token`
+4. Admin API routes check `Authorization: Bearer <token>` against `process.env.ADMIN_SECRET`
 
-**Indexes:** GIST on `location` · `(category, district)` · `founded_date` · `(status, closed_date)`
+No JWT, no sessions, no Supabase auth. Token lives only in sessionStorage.
 
-### `zone_density` (materialized view)
+## DB Query Pattern
 
-~200 m grid cells with store counts, avg rating, and date range per active category. Powers the home-page heatmap without a full table scan.
+All queries use postgres.js tagged template SQL via `lib/db.ts`:
 
-### `dead_zone_clusters` (materialized view)
+```typescript
+import getDb from '@/lib/db'
 
-~200 m grid cells ranked by `closure_rate` (closed ÷ total) and `closed_count`. A cell with `closure_rate > 0.3` and `closed_count ≥ 3` is a meaningful "avoid this block" signal.
+const sql = getDb()
+if (!sql) return res.status(503).json({ error: 'no db' })
 
-| Column | Description |
-|---|---|
-| `category` | Store type slug |
-| `district` | Taipei district |
-| `grid_cell` | PostGIS ~200 m cell centroid |
-| `closed_count` | Number of closed stores in this cell |
-| `total_count` | All stores ever (active + closed) |
-| `closure_rate` | `closed_count / total_count` |
-| `earliest_closure` | Oldest recorded `closed_date` |
-| `latest_closure` | Most recent `closed_date` |
-
-### `categories`
-
-| Column | Description |
-|---|---|
-| `name` | Slug (`cafe`, `convenience_store`, …) |
-| `display_name` | UI label (`Coffee Shop`) |
-| `group_name` | `f_and_b` \| `retail` \| `services` |
-
-Seeded with 6 categories. `/api/categories` derives live categories from the `places` table as a fallback, so new categories added via the pipeline appear automatically.
-
-## Map Pages
-
-### Home (`/`)
-
-- Loads all places for the selected category from Supabase (Supabase-only, no auto Google calls)
-- List updates as you **pan the map** — shows only stores in the current viewport
-- **Hover** a list item → highlight pin on map + popup; click → fly to location
-- **Research this area** button (admin only, shown when DB has < 30 stores) → fetches from Google and saves to DB
-
-### Time Machine (`/time-machine`)
-
-- Year slider range is **dynamic** — 10th percentile of `founded_year` to max, recalculated per category
-- **Cold-blue heatmap** = established/saturated zones (high existing competition)
-- **Warm-red heatmap** = recent growth (stores opened in last 3 years)
-- **Dead zone toggle (⚠️)** — when ON, shows:
-  - Dark maroon heatmap for areas with high business failure density
-  - ☠ skull markers on individual permanently-closed stores
-  - Popup shows `⚠️ Closed YYYY` with founding year
-- **Pop ring + dot** — stores that opened exactly in the selected year get a glowing aura
-- **Histogram** — bars above the slider colored cold→hot by year position; click any bar to jump to that year
-
-## Angel Zone — Planned Feature
-
-> **Concept:** Predict low-risk, high-potential locations for new stores by cross-referencing multiple signals.
-
-### Why convenience stores are the anchor signal
-
-Convenience store chains (7-Eleven, FamilyMart, Hi-Life) place stores using professional foot-traffic algorithms. A neighborhood dense with convenience stores reliably indicates **high pedestrian activity**. When a target category (say, café) has low density in that same neighborhood, it represents an underserved but active market.
-
-### Scoring model (planned)
-
-Each ~200 m grid cell gets a score:
-
-```
-angel_score =
-    (convenience_store_density  × 0.35)   # foot traffic proxy
-  + (active_store_growth_rate   × 0.25)   # rising neighborhood
-  - (dead_zone_closure_rate     × 0.40)   # structural failure signal
-  - (target_category_saturation × 0.20)   # competition penalty
+const rows = await sql`SELECT * FROM places WHERE city = ${city} LIMIT ${limit}`
+const typed = rows as unknown as MyType[]
 ```
 
-Cells in the top quartile of `angel_score` where `closure_rate < 0.15` are highlighted as **Angel Zones**.
+Never use an ORM, never use Supabase client for DB queries.
 
-### Implementation steps
+## Deployment
 
-1. **DB**: Add `angel_zones` materialized view joining `zone_density`, `dead_zone_clusters`, and convenience-store density
-   ```sql
-   CREATE MATERIALIZED VIEW public.angel_zones AS
-   SELECT
-     category,
-     district,
-     grid_cell,
-     -- foot traffic proxy: convenience store count in same cell
-     (SELECT store_count FROM zone_density z2
-      WHERE z2.grid_cell = z.grid_cell
-        AND z2.category = 'convenience_store') AS cvs_density,
-     store_count AS target_density,
-     COALESCE(dc.closure_rate, 0)              AS closure_rate,
-     -- angel score (higher = better opportunity)
-     ROUND(
-       COALESCE(cvs.store_count, 0) * 0.35
-       - COALESCE(dc.closure_rate, 0) * 0.40
-       - z.store_count * 0.20,
-     2) AS angel_score
-   FROM zone_density z
-   LEFT JOIN dead_zone_clusters dc USING (category, district, grid_cell)
-   LEFT JOIN zone_density cvs ON cvs.grid_cell = z.grid_cell
-     AND cvs.category = 'convenience_store';
-   ```
-
-2. **API**: `/api/supabase/angel-zones?category=cafe` — returns GeoJSON of top-scoring cells
-
-3. **Map layer**: Green glow heatmap overlaid on the home page and Time Machine when "Angel Zones" toggle is ON
-
-4. **Data requirement**: convenience store data must be seeded (run Stage 1 with `--category "convenience store"`)
-
-## Admin System
-
-### Enable Admin Access
-
-```text
-NEXT_PUBLIC_ADMIN_EMAIL=your-admin-email@example.com
-```
-
-Log in with that email via OTP. A red **Admin CMS** button appears in the navbar.
-
-### Admin Dashboard (`/admin`)
-
-- View all places with inline edit and delete
-- **Research this area** button on the home map triggers a live Google fetch for the current viewport center and saves results to Supabase
-
-### Cost Model
-
-All user traffic hits Supabase only. Google Places API is called exclusively:
-- During `seed_taipei_all_districts.py` (admin pipeline)
-- When an admin clicks **Research this area** on the home page
-
-## Testing
+Production runs on GCP Cloud Run (asia-southeast1). See [docs/GCP_SETUP.md](docs/GCP_SETUP.md) for the full runbook.
 
 ```bash
-npm test                  # unit tests
-npm run test:integration  # read-only, requires .env.local
+# Manual deploy
+gcloud builds submit --config cloudbuild.yaml
 ```
 
-## Roadmap
+## Key Files
 
-- [x] Interactive Mapbox map with viewport-driven store list
-- [x] Cold-blue / warm-red heatmap for saturation vs. growth
-- [x] Time Machine with dynamic year range per category
-- [x] Dead zone ☠ markers + dark heatmap layer
-- [x] Multi-category support with live category list from DB
-- [x] 3×3 grid seeding per district (eliminates border blind spots)
-- [x] Dead-zone data pipeline (Google Details + Taiwan gov CSV reconciliation)
-- [x] `dead_zone_clusters` materialized view
-- [x] Hover-to-highlight + pan-to-update on home map
-- [x] Admin "Research this area" on-demand Google fetch
-- [ ] Angel Zone scoring layer (convenience store × low closure rate)
-- [ ] District boundary polygons in `districts` table
-- [ ] `zone_density` + `dead_zone_clusters` wired to a REST endpoint for the heatmap
-- [ ] Store lifecycle timeline (relocated tracking)
-- [ ] Public API for third-party integrations
+| File | Purpose |
+|---|---|
+| `lib/db.ts` | postgres.js singleton — `getDb()` |
+| `db/init_all.sql` | Full schema + seed (safe to re-run) |
+| `db/sg_enrichment.sql` | SG-specific tables and columns |
+| `docker-compose.yml` | Local dev: PostGIS + Next.js |
+| `cloudbuild.yaml` | GCP CI/CD pipeline |
+| `pages/map.tsx` | Main map page |
+| `pages/discover.tsx` | Hawker + mall + Jurong East + random picker |
+| `pages/michelin.tsx` | Michelin page with tenure animations |
+| `pages/api/places.ts` | Core spatial query + admin Google refresh |
+| `components/Navbar.tsx` | Global nav |
+| `scripts/fetch/` | Python ETL scripts |
+
+## See Also
+
+- [docs/GCP_SETUP.md](docs/GCP_SETUP.md) — Cloud SQL + Cloud Run deployment
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — Full system design
+- [docs/SINGAPORE.md](docs/SINGAPORE.md) — Districts, MRT stations, local data
+- [docs/DATA_PIPELINE.md](docs/DATA_PIPELINE.md) — End-to-end data flow
+- [docs/ROADMAP.md](docs/ROADMAP.md) — Phased feature roadmap
+- [CLAUDE.md](CLAUDE.md) — AI development guide

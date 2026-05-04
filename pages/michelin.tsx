@@ -76,6 +76,9 @@ function TenureBar({ since, stars, currentSince }: { since: number; stars: 1 | 2
               width: 5, height: active ? 4 : 2, borderRadius: 1,
               background: bright ? color : active ? `${color}44` : 'rgba(255,255,255,0.07)',
               flexShrink: 0,
+              transformOrigin: 'bottom',
+              animation: 'tenureGrow 0.35s ease both',
+              animationDelay: `${80 + i * 28}ms`,
             }}
           />
         )
@@ -97,6 +100,8 @@ export default function MichelinPage() {
   const [mapReady,   setMapReady]   = useState(false)
   const [blinkOn,    setBlinkOn]    = useState(true)
   const [yearFilter, setYearFilter] = useState<number | null>(null)
+  const [listKey,    setListKey]    = useState(0)
+  const [listFading, setListFading] = useState(false)
 
   useEffect(() => {
     const id = setInterval(() => setBlinkOn(b => !b), 600)
@@ -150,6 +155,17 @@ export default function MichelinPage() {
       })
       el.addEventListener('click', () => flyTo(r))
 
+      // Pulse ring — plays once on mount
+      const ring = document.createElement('div')
+      ring.style.cssText = `
+        position:absolute; inset:-6px; border-radius:50%;
+        border:2px solid ${t.glow};
+        animation:markerPulse 1.2s ease-out both;
+        pointer-events:none;
+      `
+      el.style.position = 'relative'
+      el.appendChild(ring)
+
       markersRef.current[r.name] = new mapboxgl.Marker({ element: el })
         .setLngLat([r.lng, r.lat])
         .addTo(map.current!)
@@ -160,6 +176,15 @@ export default function MichelinPage() {
     map.current?.flyTo({ center: [r.lng, r.lat], zoom: 15.5, duration: 1200, essential: true })
     setSelected(r.name)
     setTimeout(() => rowRefs.current[r.name]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 120)
+  }
+
+  const handleYearFilter = (yr: number | null) => {
+    setListFading(true)
+    setTimeout(() => {
+      setYearFilter(yr)
+      setListKey(k => k + 1)
+      setListFading(false)
+    }, 180)
   }
 
   const filtered = yearFilter ? MICHELIN.filter(r => r.since === yearFilter) : MICHELIN
@@ -177,6 +202,20 @@ export default function MichelinPage() {
 
   return (
     <>
+      <style>{`
+        @keyframes fadeSlideIn {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes tenureGrow {
+          from { transform: scaleY(0); }
+          to   { transform: scaleY(1); }
+        }
+        @keyframes markerPulse {
+          0%   { transform: scale(0.8); opacity: 0.7; }
+          100% { transform: scale(2.6); opacity: 0; }
+        }
+      `}</style>
       <Head>
         <title>Michelin Star Registry — StorePulse</title>
         <meta name="description" content="Singapore Michelin star restaurants mapped with tactical precision." />
@@ -303,7 +342,7 @@ export default function MichelinPage() {
                     return (
                       <button
                         key={yr ?? 'all'}
-                        onClick={() => setYearFilter(yr === yearFilter ? null : yr)}
+                        onClick={() => handleYearFilter(yr === yearFilter ? null : yr)}
                         style={{
                           fontFamily: 'monospace', fontSize: 9, letterSpacing: 1,
                           padding: '3px 7px', borderRadius: 3,
@@ -322,7 +361,7 @@ export default function MichelinPage() {
             </div>
 
             {/* Restaurant list ──────────────────────────────────────────── */}
-            <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 24 }}>
+            <div key={listKey} style={{ flex: 1, overflowY: 'auto', paddingBottom: 24, transition: 'opacity 0.18s', opacity: listFading ? 0.3 : 1 }}>
               {tiers.map(({ stars, items }) => {
                 const t = TIER[stars]
                 return (
@@ -362,6 +401,8 @@ export default function MichelinPage() {
                             background: isSel ? 'rgba(240,165,0,0.06)' : 'transparent',
                             cursor: 'pointer',
                             transition: 'background 0.15s, border-left-color 0.15s',
+                            animation: 'fadeSlideIn 0.38s ease both',
+                            animationDelay: `${idx * 38}ms`,
                           }}
                           onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = 'rgba(240,165,0,0.03)' }}
                           onMouseLeave={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = 'transparent' }}
