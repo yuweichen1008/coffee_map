@@ -95,8 +95,8 @@ LTA_API_KEY=...
 docker-compose up -d
 
 # Run schema + seed
-docker exec -i storepulse-db psql -U storepulse storepulse < db/init_all.sql
-docker exec -i storepulse-db psql -U storepulse storepulse < db/sg_enrichment.sql
+docker-compose exec -T db psql -U storepulse storepulse < db/init_all.sql
+docker-compose exec -T db psql -U storepulse storepulse < db/sg_enrichment.sql
 
 # Start Next.js
 npm install

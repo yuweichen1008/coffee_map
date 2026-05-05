@@ -1,12 +1,44 @@
-# StorePulse — Claude Development Guide
+# CLAUDE.md
 
-## Project Identity
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## StorePulse — Claude Development Guide
 
 **StorePulse** is a retail location intelligence platform for Singapore SMEs and angel investor pitch.
-Stack: **Next.js 14 + TypeScript + postgres.js (PostgreSQL + PostGIS) + Mapbox GL JS + Python pipeline**
+Stack: **Next.js 13 + TypeScript + postgres.js (PostgreSQL + PostGIS) + Mapbox GL JS + Python pipeline**
 
 Founder is based in Singapore, actively pitching to pre-seed investors.
 Primary market: Singapore. Secondary: Taipei (live dataset retained for comparison).
+
+---
+
+## Commands
+
+```bash
+# Local dev — start DB first, then Next.js
+docker-compose up -d db        # PostGIS only (faster for dev)
+npm run dev                    # → http://localhost:3000 (may use 3001 if 3000 is occupied)
+
+# Full Docker stack (DB + Next.js in containers)
+docker-compose up -d
+
+# Type-check without emitting
+npx tsc --noEmit
+
+# Tests
+npm test                       # Jest unit tests
+npm run test:integration       # Integration tests (runs serially)
+
+# Verify no Supabase imports remain
+grep -r "supabase" pages/ components/ lib/ --include="*.ts" --include="*.tsx" -l
+
+# DB schema reset (run after docker-compose up -d db)
+docker-compose exec -T db psql -U storepulse storepulse < db/init_all.sql
+docker-compose exec -T db psql -U storepulse storepulse < db/sg_enrichment.sql
+
+# Deploy
+gcloud builds submit --config cloudbuild.yaml
+```
 
 ---
 
@@ -27,22 +59,29 @@ Primary market: Singapore. Secondary: Taipei (live dataset retained for comparis
 ```
 Browser (Next.js pages)
   └─ /map          — Mapbox heatmap + signal intelligence panel
-  └─ /discover     — Hawker rankings + MRT mall finder + NEA grade badges
-  └─ /michelin     — Michelin-starred restaurants with tenure timeline
+  └─ /discover     — Hawker rankings + MRT mall finder + Jurong East tab + 🎲 random picker
+  └─ /michelin     — Michelin-starred restaurants with tenure timeline + vintage filter
   └─ /time-machine — Year-by-year store opening/closure trends
   └─ /pitch        — VC snapshot (live stats from /api/pitch-stats)
   └─ /intro        — B2B landing page
+  └─ /login        — Admin login (email → /api/auth/login → sessionStorage token)
+  └─ /admin        — Admin CRUD for places (bearer token gated)
 
 API Routes (/pages/api/)
-  └─ places.ts           — Spatial bbox query, admin-gated Google refresh
-  └─ hawker-rank.ts      — Hawkers ordered by review_count DESC (+ nea_grade)
-  └─ mrt-malls.ts        — Malls within radius of MRT lat/lng (Haversine)
-  └─ pitch-stats.ts      — Live counts for investor deck
-  └─ categories.ts       — Category list from DB
-  └─ stats.ts            — District-level aggregates
-  └─ sg/enrichment.ts    — Per-place SG data (NEA, ACRA, bus stops)
-  └─ sg/planning-areas.ts — All 55 planning area GeoJSON polygons
-  └─ sg/hdb-prices.ts    — Median HDB resale price by town
+  └─ places.ts              — Spatial bbox query, admin-gated Google refresh
+  └─ hawker-rank.ts         — Hawkers ordered by review_count DESC (+ nea_grade)
+  └─ mrt-malls.ts           — Malls within radius of MRT lat/lng (Haversine)
+  └─ pitch-stats.ts         — Live counts for investor deck
+  └─ categories.ts          — Category list from DB
+  └─ stats.ts               — District-level aggregates
+  └─ report.ts              — User-submitted store report
+  └─ auth/login.ts          — POST email → returns ADMIN_SECRET if email matches env
+  └─ auth/register.ts       — Admin registration
+  └─ admin/place.ts         — Admin CRUD: create/update/delete a place (Bearer gated)
+  └─ consulting/signals.ts  — B2B consulting signal data
+  └─ sg/enrichment.ts       — Per-place SG data (NEA, ACRA, bus stops)
+  └─ sg/planning-areas.ts   — All 55 planning area GeoJSON polygons
+  └─ sg/hdb-prices.ts       — Median HDB resale price by town
 
 PostgreSQL + PostGIS (Docker locally / Cloud SQL in production)
   └─ places              — Core store table (14 categories, 2 cities)
@@ -56,14 +95,47 @@ PostgreSQL + PostGIS (Docker locally / Cloud SQL in production)
   └─ dead_zone_clusters  — Materialized view: closure cluster signals
 
 Python ETL (scripts/)
-  └─ fetch/fetch_places.py          — Google Places 3×3 grid scrape per district
-  └─ fetch/fetch_sg_govdata.py      — data.gov.sg: hawker centres + NEA grades
-  └─ fetch/fetch_lta_busstops.py    — LTA DataMall: 5K bus stops → bus_stops_400m
-  └─ fetch/fetch_onemap_boundaries.py — OneMap: 55 planning area polygons
-  └─ fetch/fetch_acra.py            — ACRA CSV: business reg/cease dates
-  └─ preprocess/update_founded_dates.py — Backfill opening dates
-  └─ admin/fetch_closed_businesses.py   — Mark closed via GCIS/ACRA
+  └─ fetch/fetch_places.py               — Google Places 3×3 grid scrape per district
+  └─ fetch/fetch_sg_govdata.py           — data.gov.sg: hawker centres + NEA grades
+  └─ fetch/fetch_lta_busstops.py         — LTA DataMall: 5K bus stops → bus_stops_400m
+  └─ fetch/fetch_onemap_boundaries.py    — OneMap: 55 planning area polygons
+  └─ fetch/fetch_acra.py                 — ACRA CSV: business reg/cease dates
+  └─ preprocess/update_founded_dates.py  — Backfill opening dates
+  └─ admin/fetch_closed_businesses.py    — Mark closed via GCIS/ACRA
 ```
+
+---
+
+## Auth Flow
+
+No JWT, no sessions, no external auth service. Single-admin email gate:
+
+1. Client POSTs `{ email }` to `/api/auth/login`
+2. Server compares against `NEXT_PUBLIC_ADMIN_EMAIL`; if match, returns `ADMIN_SECRET`
+3. Client stores token in `sessionStorage` as `storepulse_token`
+4. Admin API routes check `Authorization: Bearer <token>` against `process.env.ADMIN_SECRET`
+
+Client-side admin check pattern:
+```typescript
+const isAdmin = typeof window !== 'undefined' &&
+  sessionStorage.getItem('storepulse_token') === process.env.NEXT_PUBLIC_ADMIN_SECRET
+```
+
+---
+
+## DB Query Pattern
+
+```typescript
+import getDb from '@/lib/db'
+
+const sql = getDb()
+if (!sql) return res.status(503).json({ error: 'no db' })
+
+const rows = await sql`SELECT * FROM places WHERE city = ${city} LIMIT ${limit}`
+const typed = rows as unknown as MyType[]
+```
+
+`getDb()` returns `null` when `DATABASE_URL` is unset — always guard against it. Never use an ORM.
 
 ---
 
@@ -96,7 +168,7 @@ Python ETL (scripts/)
 | `GOOGLE_MAPS_API_KEY` | server + Python | Places scraping + API refresh |
 | `LTA_API_KEY` | Python scripts | LTA DataMall bus stop fetch |
 
-**Local dev:** copy `.env.docker.example` → `.env.docker`, then `docker-compose up`
+**Local dev:** copy `.env.docker.example` → `.env.docker`, then `docker-compose up -d db && npm run dev`
 **Production:** secrets in GCP Secret Manager, deployed via `cloudbuild.yaml` to Cloud Run (asia-southeast1)
 
 ---
@@ -107,8 +179,8 @@ Python ETL (scripts/)
 |---|---|
 | `lib/db.ts` | postgres.js singleton — `getDb()` returns sql instance or null if no DATABASE_URL |
 | `pages/map.tsx` | Main map: `CATEGORY_COLORS`, `SIGNAL_INTEL`, `CITY_CONFIG`, `SINGAPORE_DISTRICTS` |
-| `pages/discover.tsx` | Hawker rankings + MRT mall finder + NEA grade badges |
-| `pages/michelin.tsx` | Michelin restaurants with tenure timeline + vintage class filter |
+| `pages/discover.tsx` | Hawker rankings + MRT mall finder + Jurong East tab + random picker |
+| `pages/michelin.tsx` | Michelin restaurants with tenure timeline + vintage filter + entrance animations |
 | `pages/pitch.tsx` | Investor deck with live stats |
 | `pages/api/places.ts` | Core spatial query + admin Google refresh |
 | `db/init_all.sql` | Full schema + seed data (safe to re-run) |
@@ -124,6 +196,7 @@ Python ETL (scripts/)
 ## Common Pitfalls
 
 - **postgres.js types**: Results are `RowList<Row[]>` — always cast: `rows as unknown as MyType[]`
+- **`getDb()` null guard**: Always check `if (!sql)` before querying — returns null when DATABASE_URL is unset.
 - **Python 3.9**: No `dict | None` type hints — use plain `= None` parameter defaults.
 - **NEXT_PUBLIC_ prefix**: Any env var read client-side must have `NEXT_PUBLIC_` prefix.
 - **Port conflict**: Dev server may start on 3001 if 3000 is occupied — check terminal output.
