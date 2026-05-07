@@ -178,7 +178,7 @@ export default function Home() {
     })),
   }), [])
 
-  // ── Load all places for category from Supabase (streamed in batches) ──────────
+  // ── Load all places for category (streamed in batches) ───────────────────────
   const loadCategory = useCallback(async (cat: string) => {
     if (!map.current) return
     setLoading(true)
@@ -285,7 +285,7 @@ export default function Home() {
     while (true) {
       try {
         const res  = await fetch(
-          `/api/supabase/places?category=${encodeURIComponent(cat)}&offset=${offset}&limit=${BATCH}`,
+          `/api/places-list?category=${encodeURIComponent(cat)}&city=${city}&offset=${offset}&limit=${BATCH}`,
         )
         const json = await res.json()
         const rows: Place[] = (json.results ?? []).filter((p: any) => p.lat != null && p.lng != null)
@@ -307,14 +307,14 @@ export default function Home() {
     }
 
     setLoading(false)
-  }, [updateVisible, buildGeoJSON])
+  }, [updateVisible, buildGeoJSON, city])
 
-  // Reload when category changes
+  // Reload when category or city changes
   useEffect(() => {
     if (!map.current) return
     loadCategory(selectedCategory)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCategory])
+  }, [selectedCategory, city])
 
   // ── Hover a list item → highlight on map + popup ──────────────────────────────
   const handleHoverEnter = useCallback((place: Place) => {
@@ -563,7 +563,7 @@ export default function Home() {
                         {i + 1 > 99 ? '·' : i + 1}
                       </span>
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-gray-100 leading-snug truncate">{place.name}</p>
+                        <p className="text-sm font-medium text-gray-100 leading-snug truncate" title={place.name}>{place.name}</p>
                         {place.address && (
                           <p className="text-xs text-gray-500 mt-0.5 leading-snug truncate">{place.address}</p>
                         )}

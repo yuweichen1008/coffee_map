@@ -129,29 +129,36 @@ export default function MichelinPage() {
 
     MICHELIN.forEach(r => {
       const t  = TIER[r.stars]
+
+      // Outer el: plain container — no transitions so Mapbox transform-based
+      // repositioning during zoom/pan is instant (no drift/lag)
       const el = document.createElement('div')
-      el.style.cssText = `
-        width:${t.size}px; height:${t.size}px;
+      el.style.cssText = `width:${t.size}px; height:${t.size}px; position:relative; cursor:pointer;`
+
+      // Inner: carries all visuals + hover transitions (isolated from Mapbox transforms)
+      const inner = document.createElement('div')
+      inner.style.cssText = `
+        width:100%; height:100%;
         background:${t.color}; border-radius:50%;
         box-shadow:0 0 ${t.size / 2}px ${t.size / 4}px ${t.glow},
                    0 0 ${t.size * 1.5}px ${t.size / 2}px ${t.ring};
         display:flex; align-items:center; justify-content:center;
         font-size:${t.size * 0.38}px; color:#000; font-weight:900;
-        cursor:pointer; transition:transform 0.15s, box-shadow 0.15s;
         font-family:serif;
+        transition:transform 0.15s, box-shadow 0.15s;
       `
-      el.textContent = '★'.repeat(r.stars)
-      el.title       = `${r.name}  ${r.stars}★  since ${r.since}`
+      inner.textContent = '★'.repeat(r.stars)
+      inner.title       = `${r.name}  ${r.stars}★  since ${r.since}`
 
-      el.addEventListener('mouseenter', () => {
-        el.style.transform  = 'scale(1.35)'
-        el.style.boxShadow  = `0 0 ${t.size}px ${t.size / 2}px ${t.glow}, 0 0 ${t.size * 2.5}px ${t.size}px ${t.ring}`
-        el.style.zIndex     = '999'
+      inner.addEventListener('mouseenter', () => {
+        inner.style.transform = 'scale(1.35)'
+        inner.style.boxShadow = `0 0 ${t.size}px ${t.size / 2}px ${t.glow}, 0 0 ${t.size * 2.5}px ${t.size}px ${t.ring}`
+        inner.style.zIndex    = '999'
       })
-      el.addEventListener('mouseleave', () => {
-        el.style.transform  = 'scale(1)'
-        el.style.boxShadow  = `0 0 ${t.size / 2}px ${t.size / 4}px ${t.glow}, 0 0 ${t.size * 1.5}px ${t.size / 2}px ${t.ring}`
-        el.style.zIndex     = ''
+      inner.addEventListener('mouseleave', () => {
+        inner.style.transform = 'scale(1)'
+        inner.style.boxShadow = `0 0 ${t.size / 2}px ${t.size / 4}px ${t.glow}, 0 0 ${t.size * 1.5}px ${t.size / 2}px ${t.ring}`
+        inner.style.zIndex    = ''
       })
       el.addEventListener('click', () => flyTo(r))
 
@@ -163,10 +170,11 @@ export default function MichelinPage() {
         animation:markerPulse 1.2s ease-out both;
         pointer-events:none;
       `
-      el.style.position = 'relative'
+
+      el.appendChild(inner)
       el.appendChild(ring)
 
-      markersRef.current[r.name] = new mapboxgl.Marker({ element: el })
+      markersRef.current[r.name] = new mapboxgl.Marker({ element: el, anchor: 'center' })
         .setLngLat([r.lng, r.lat])
         .addTo(map.current!)
     })
