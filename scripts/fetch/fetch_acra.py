@@ -26,6 +26,7 @@ Usage:
   python3 fetch_acra.py --csv sg_bizfile.csv --min-similarity 85
 """
 
+from __future__ import annotations
 import argparse
 import os
 import sys

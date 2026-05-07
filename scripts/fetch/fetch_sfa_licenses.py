@@ -125,20 +125,26 @@ def transform(records):
     rows = []
     skipped = 0
     for r in records:
-        # Field names vary across SFA dataset versions — try multiple
+        # Current NEA dataset columns (2026):
+        #   licensee_name, licence_number, premises_address, grade, demerit_points,
+        #   suspension_start_date, suspension_end_date
+        # Older SFA versions used: licensee_type, address, latitude, longitude
+        name    = (r.get('licensee_name') or r.get('business_name') or r.get('name') or '').strip()
+        lic_no  = (r.get('licence_number') or r.get('license_no') or r.get('lic_no') or '').strip()
+        address = (r.get('premises_address') or r.get('address') or r.get('registered_address') or '').strip()
+        grade   = (r.get('grade') or '').strip().upper() or None
+
+        # license_type not in current dataset — all records are eating establishments
         lic_type = (
-            r.get('licensee_type') or r.get('license_type') or
-            r.get('type_of_licence') or r.get('type') or ''
+            r.get('licensee_type') or r.get('license_type') or r.get('type_of_licence') or 'EATING HOUSE'
         ).upper().strip()
 
         if lic_type in SKIP_LICENSE_TYPES:
             skipped += 1
             continue
 
-        name    = (r.get('licensee_name') or r.get('business_name') or r.get('name') or '').strip()
-        lic_no  = (r.get('licence_number') or r.get('license_no') or r.get('lic_no') or '').strip()
-        address = (r.get('address') or r.get('registered_address') or '').strip()
-        expiry  = parse_date(r.get('expiry_date') or r.get('licence_expiry_date'))
+        expiry  = parse_date(r.get('expiry_date') or r.get('licence_expiry_date')
+                             or r.get('suspension_end_date'))
         postal, district = parse_postal(address)
 
         lat_raw = r.get('latitude') or r.get('lat')
@@ -154,22 +160,25 @@ def transform(records):
             if key in lic_type:
                 category = cat
                 break
+        if not category:
+            category = 'restaurant'  # default for all NEA eating establishments
 
         if not name:
             skipped += 1
             continue
 
         rows.append({
-            'license_no':   lic_no or None,
+            'license_no':    lic_no or None,
             'business_name': name,
-            'license_type': lic_type,
-            'category':     category,
-            'address':      address,
-            'postal_code':  postal,
-            'district':     district,
-            'lat':          lat,
-            'lng':          lng,
-            'expiry_date':  expiry,
+            'license_type':  lic_type,
+            'category':      category,
+            'address':       address,
+            'postal_code':   postal,
+            'district':      district,
+            'lat':           lat,
+            'lng':           lng,
+            'expiry_date':   expiry,
+            'nea_grade':     grade,
         })
 
     print(f"  Transformed: {len(rows):,} rows  |  skipped {skipped:,} (factory/industrial)")
@@ -190,10 +199,10 @@ def upsert(conn, rows, dry_run):
     SQL = """
         INSERT INTO sg_sfa_licenses
             (license_no, business_name, license_type, category, address,
-             postal_code, district, lat, lng, expiry_date)
+             postal_code, district, lat, lng, expiry_date, nea_grade)
         VALUES
             (%(license_no)s, %(business_name)s, %(license_type)s, %(category)s, %(address)s,
-             %(postal_code)s, %(district)s, %(lat)s, %(lng)s, %(expiry_date)s)
+             %(postal_code)s, %(district)s, %(lat)s, %(lng)s, %(expiry_date)s, %(nea_grade)s)
         ON CONFLICT (license_no) DO UPDATE SET
             business_name = EXCLUDED.business_name,
             license_type  = EXCLUDED.license_type,
@@ -204,6 +213,7 @@ def upsert(conn, rows, dry_run):
             lat           = EXCLUDED.lat,
             lng           = EXCLUDED.lng,
             expiry_date   = EXCLUDED.expiry_date,
+            nea_grade     = EXCLUDED.nea_grade,
             updated_at    = now()
         WHERE %(license_no)s IS NOT NULL
     """
@@ -211,10 +221,10 @@ def upsert(conn, rows, dry_run):
     SQL_NO_KEY = """
         INSERT INTO sg_sfa_licenses
             (business_name, license_type, category, address,
-             postal_code, district, lat, lng, expiry_date)
+             postal_code, district, lat, lng, expiry_date, nea_grade)
         VALUES
             (%(business_name)s, %(license_type)s, %(category)s, %(address)s,
-             %(postal_code)s, %(district)s, %(lat)s, %(lng)s, %(expiry_date)s)
+             %(postal_code)s, %(district)s, %(lat)s, %(lng)s, %(expiry_date)s, %(nea_grade)s)
     """
     keyed   = [r for r in rows if r['license_no']]
     keyless = [r for r in rows if not r['license_no']]

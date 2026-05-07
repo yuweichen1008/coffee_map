@@ -11,6 +11,7 @@ Usage:
   python3 fetch_onemap_boundaries.py --update-districts   # re-assign places.district from polygon
 """
 
+from __future__ import annotations
 import argparse
 import os
 import sys

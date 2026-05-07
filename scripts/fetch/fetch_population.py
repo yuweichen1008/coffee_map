@@ -117,40 +117,59 @@ def fetch_all_pages(resource_id, page_size=500):
     return records
 
 
-def aggregate_by_area(records, target_year):
-    """Sum resident count per planning area for the target year."""
-    totals = defaultdict(int)
-    year_found = set()
+def aggregate_by_area(records, target_year=None):
+    """
+    Parse Singstat population CSV and return {planning_area: total_residents}.
 
+    Singstat Census 2020 format (d_7f243956483d5901f237e6f87b096636):
+      Column 'Number' contains area names. Planning area totals end with ' - Total'.
+      Column 'Total' contains the resident count.
+
+    Older annual format has columns: year, pa, pop — handled as fallback.
+    """
+    totals = {}
+
+    # Singstat Census 2020 format: 'Number' column with '- Total' suffix
+    if records and 'Number' in records[0] and 'Total' in records[0]:
+        for r in records:
+            label = str(r.get('Number') or '').strip()
+            if not label.endswith(' - Total'):
+                continue  # skip subzone rows and national total
+            area = label.removesuffix(' - Total').strip()
+            try:
+                totals[area] = int(str(r.get('Total') or '0').replace(',', ''))
+            except (ValueError, TypeError):
+                pass
+        return totals
+
+    # Older annual format: columns year, pa, pop
+    year_found = set()
     for r in records:
         year = str(r.get('year') or r.get('Year') or '').strip()
+        year_found.add(year)
         if target_year and year != str(target_year):
             continue
-        year_found.add(year)
-
         area = (r.get('pa') or r.get('planning_area') or r.get('Planning Area') or '').strip().title()
         pop  = r.get('pop') or r.get('total') or r.get('resident_count') or 0
         try:
-            totals[area] += int(str(pop).replace(',', '') or 0)
+            totals[area] = totals.get(area, 0) + int(str(pop).replace(',', '') or 0)
         except (ValueError, TypeError):
             pass
 
     if not totals and year_found:
-        # Year filter too strict — use most recent year in data
         latest = max(year_found)
         print(f"  [WARN] No data for year {target_year}. Using {latest}.")
         for r in records:
-            year = str(r.get('year') or r.get('Year') or '').strip()
-            if year != latest:
+            if str(r.get('year') or r.get('Year') or '').strip() != latest:
                 continue
             area = (r.get('pa') or r.get('planning_area') or r.get('Planning Area') or '').strip().title()
             pop  = r.get('pop') or r.get('total') or r.get('resident_count') or 0
             try:
-                totals[area] += int(str(pop).replace(',', '') or 0)
+                totals[area] = totals.get(area, 0) + int(str(pop).replace(',', '') or 0)
             except (ValueError, TypeError):
                 pass
 
-    return dict(totals)
+    return totals
 
 
 def upsert(conn, population_map, census_year, dry_run):

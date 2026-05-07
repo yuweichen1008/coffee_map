@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS sg_sfa_licenses (
     lat             DOUBLE PRECISION,
     lng             DOUBLE PRECISION,
     expiry_date     DATE,
+    nea_grade       CHAR(1),           -- A / B / C hygiene grade from NEA
     place_id        UUID REFERENCES places(id) ON DELETE SET NULL,  -- matched place if found
     created_at      TIMESTAMPTZ DEFAULT now(),
     updated_at      TIMESTAMPTZ DEFAULT now()

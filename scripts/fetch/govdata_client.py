@@ -105,15 +105,20 @@ def fetch_dataset_csv(dataset_id, encoding="utf-8-sig"):
 # Find these by visiting data.gov.sg and copying the ID from the dataset URL.
 # IDs change when datasets are re-published — check if you get a 404.
 DATASET_IDS = {
-    # HDB resale prices (confirmed working 2025-05)
+    # HDB resale prices (confirmed 2026-05)
     "hdb_resale":       "d_8b84c4ee58e3cfc0ece0d773c8ca6abc",
 
-    # TODO: update these by visiting the dataset pages on data.gov.sg:
-    #   https://data.gov.sg/datasets?query=hawker+centre
-    #   https://data.gov.sg/datasets?query=food+establishment
-    #   https://data.gov.sg/datasets?query=resident+population+planning+area
-    "hawker_centres":   "d_4a2ce3df0e5dc9b39cf7d2da0c67ef33",   # needs verification
-    "nea_hygiene":      "d_9d6e4a25e3e8f42e3fc1d0bf48b4a671",   # needs verification
-    "sfa_food_license": "d_b401cf6d3b8546dd9a0079cd0ddc3dc4",   # needs verification
-    "population_pa":    "d_c56d25e28e48b7fe87f82e53c4d0cbc9",   # needs verification
+    # NEA hawker centres — GeoJSON with locations, stall counts, status (confirmed 2026-05)
+    "hawker_centres":   "d_4a086da0a5553be1d89383cd90d07ecd",
+
+    # NEA tabular hawker centre list with addresses (confirmed 2026-05)
+    "hawker_centres_list": "d_68a42f09f350881996d83f9cd73ab02f",
+
+    # NEA licensed eating establishments — 36k+ individual premises with address,
+    # licence number, grade, demerit points (confirmed 2026-05)
+    # Replaces old SFA dataset which was reorganised
+    "sfa_food_license": "d_227473e811b09731e64725f140b77697",
+
+    # Singstat Census 2020 — resident population by planning area + subzone + dwelling type
+    "population_pa":    "d_7f243956483d5901f237e6f87b096636",
 }
