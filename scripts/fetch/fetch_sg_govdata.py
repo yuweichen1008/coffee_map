@@ -15,51 +15,21 @@ Usage:
 import argparse
 import os
 import sys
-import json
-import time
-import requests
 import psycopg2
 from psycopg2.extras import execute_values
+from govdata_client import fetch_dataset_csv, DATASET_IDS
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://storepulse:storepulse@localhost:5432/storepulse")
-
-# data.gov.sg resource IDs
-HAWKER_RESOURCE_ID  = "8884b6aa-bce1-4fb1-b5db-13f39c84c978"
-NEA_HYGIENE_URL     = "https://data.gov.sg/api/action/datastore_search"
-# NEA hygiene resource ID (food hygiene rating scheme results)
-NEA_RESOURCE_ID     = "4a291f8e-f5d9-4b1d-b62c-ffdfbfd0a7bb"
-
-GOVDATA_BASE = "https://data.gov.sg/api/action/datastore_search"
-
-
-def fetch_all_pages(resource_id: str, page_size: int = 100) -> list:
-    """Paginate through a data.gov.sg datastore resource."""
-    records = []
-    offset  = 0
-    while True:
-        url = f"{GOVDATA_BASE}?resource_id={resource_id}&limit={page_size}&offset={offset}"
-        resp = requests.get(url, timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
-        if not data.get("success"):
-            print(f"  [WARN] API returned success=false for {resource_id}", file=sys.stderr)
-            break
-        rows = data["result"]["records"]
-        if not rows:
-            break
-        records.extend(rows)
-        print(f"  Fetched {len(records)} / {data['result']['total']} records", end="\r")
-        if len(records) >= data["result"]["total"]:
-            break
-        offset += page_size
-        time.sleep(0.3)
-    print()
-    return records
 
 
 def fetch_hawker_centres(conn, dry_run: bool):
     print("\n=== Hawker Centres (data.gov.sg) ===")
-    records = fetch_all_pages(HAWKER_RESOURCE_ID)
+    try:
+        records = fetch_dataset_csv(DATASET_IDS["hawker_centres"])
+    except Exception as e:
+        print(f"  [WARN] Could not fetch hawker data: {e}")
+        print("  Update DATASET_IDS['hawker_centres'] in govdata_client.py")
+        return
     print(f"  Fetched {len(records)} hawker centre records")
 
     rows = []
@@ -102,10 +72,10 @@ def fetch_hawker_centres(conn, dry_run: bool):
 def fetch_nea_hygiene(conn, dry_run: bool):
     print("\n=== NEA Food Hygiene Grades (data.gov.sg) ===")
     try:
-        records = fetch_all_pages(NEA_RESOURCE_ID)
+        records = fetch_dataset_csv(DATASET_IDS["nea_hygiene"])
     except Exception as e:
         print(f"  [WARN] Could not fetch NEA hygiene data: {e}")
-        print("  Trying alternative endpoint...")
+        print("  Update DATASET_IDS['nea_hygiene'] in govdata_client.py")
         # Some resource IDs change — skip gracefully
         return
 

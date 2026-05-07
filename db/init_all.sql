@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS public.places (
   google_place_id         text        UNIQUE,          -- unique Google Place ID
   name                    text        NOT NULL,
   address                 text,
+  city                    text,                        -- 'singapore' | 'taipei'
   district                text,                        -- denormalized for fast WHERE district = ?
   zipcode                 text,
   lat                     double precision,
