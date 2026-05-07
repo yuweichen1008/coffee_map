@@ -132,7 +132,8 @@ def transform(records):
         name    = (r.get('licensee_name') or r.get('business_name') or r.get('name') or '').strip()
         lic_no  = (r.get('licence_number') or r.get('license_no') or r.get('lic_no') or '').strip()
         address = (r.get('premises_address') or r.get('address') or r.get('registered_address') or '').strip()
-        grade   = (r.get('grade') or '').strip().upper() or None
+        grade_raw = (r.get('grade') or '').strip().upper()
+        grade = grade_raw if grade_raw in ('A', 'B', 'C') else None
 
         # license_type not in current dataset — all records are eating establishments
         lic_type = (
