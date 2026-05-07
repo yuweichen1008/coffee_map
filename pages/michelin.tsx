@@ -7,74 +7,91 @@ import Navbar from '../components/Navbar'
 // ── Constants ─────────────────────────────────────────────────────────────────
 const GUIDE_START = 2016
 const GUIDE_END   = 2024
-const GUIDE_SPAN  = GUIDE_END - GUIDE_START + 1  // 9 slots
+const GUIDE_SPAN  = GUIDE_END - GUIDE_START + 1
 
-// ── Data ──────────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 type Restaurant = {
   name: string; stars: 1 | 2 | 3; cuisine: string; chef: string
   district: string; address: string; lat: number; lng: number
-  note: string
-  since: number        // year first starred in SG Michelin Guide
-  currentSince: number // year achieved current star count
-  priceSGD: string     // $$$ or $$$$
-  mrt: string          // nearest MRT station
-  history?: string     // star ascension e.g. "1★ 2017 → 2★ 2018 → 3★ 2019"
+  note: string; since: number; currentSince: number
+  priceSGD: string; mrt: string; history?: string
 }
 
+type BibRestaurant = {
+  name: string; cuisine: string
+  district: string; address: string; lat: number; lng: number
+  note: string; since: number; mrt: string
+}
+
+// ── Starred restaurants ───────────────────────────────────────────────────────
 const MICHELIN: Restaurant[] = [
-  // ★★★ Supreme Command
-  { name: 'Odette',         stars: 3, cuisine: 'Contemporary French',   chef: 'Julien Royer',      district: 'Marina Bay',  address: '1 St Andrew\'s Rd',  lat: 1.2895, lng: 103.8522, note: 'Seasonal tasting menu set inside National Gallery Singapore',  since: 2017, currentSince: 2019, priceSGD: '$$$$', mrt: 'City Hall',       history: '1★ 2017 → 2★ 2018 → 3★ 2019' },
-  { name: 'Les Amis',       stars: 3, cuisine: 'Classic French',        chef: 'Sébastien Lepinoy', district: 'Orchard',     address: '1 Scotts Rd',        lat: 1.3041, lng: 103.8319, note: 'Haute cuisine institution — Singapore outpost of a 1994 Parisian legend', since: 2018, currentSince: 2019, priceSGD: '$$$$', mrt: 'Orchard',         history: '2★ 2018 → 3★ 2019' },
-  // ★★ Grand Command
-  { name: 'Shoukouwa',      stars: 2, cuisine: 'Edo-style Sushi',       chef: 'Koichiro Oshino',   district: 'Marina Bay',  address: '4 One Fullerton',    lat: 1.2844, lng: 103.8516, note: 'Intimate 10-seat omakase counter, fish flown daily from Tsukiji', since: 2016, currentSince: 2016, priceSGD: '$$$$', mrt: 'Raffles Place' },
-  { name: 'Shisen Hanten',  stars: 2, cuisine: 'Sichuan Chinese',       chef: 'Chen Kentaro',      district: 'Orchard',     address: '333 Orchard Rd',     lat: 1.3015, lng: 103.8316, note: 'Four-generation Sichuan dynasty — mala tradition meets precision technique', since: 2016, currentSince: 2016, priceSGD: '$$$',  mrt: 'Orchard' },
-  // ★ Field Command
-  { name: 'Burnt Ends',     stars: 1, cuisine: 'Modern Barbecue',       chef: 'Dave Pynt',         district: 'Chinatown',   address: '20 Teck Lim Rd',     lat: 1.2811, lng: 103.8432, note: 'Wood-fired Australian BBQ with custom-built four-tonne kiln', since: 2016, currentSince: 2016, priceSGD: '$$$',  mrt: 'Tanjong Pagar' },
-  { name: 'Candlenut',      stars: 1, cuisine: 'Peranakan',             chef: 'Malcolm Lee',       district: 'Queenstown',  address: '17A Dempsey Rd',     lat: 1.3069, lng: 103.8173, note: 'World\'s first Michelin-starred Peranakan restaurant — nyonya classics elevated', since: 2016, currentSince: 2016, priceSGD: '$$$',  mrt: 'Botanic Gardens' },
-  { name: 'Corner House',   stars: 1, cuisine: 'Gastro-Botanica',       chef: 'Jason Tan',         district: 'Queenstown',  address: '1 Cluny Rd',         lat: 1.3140, lng: 103.8152, note: 'Colonial black-and-white bungalow inside Singapore Botanic Gardens', since: 2016, currentSince: 2016, priceSGD: '$$$$', mrt: 'Botanic Gardens' },
-  { name: 'Cloudstreet',    stars: 1, cuisine: 'Contemporary',          chef: 'Rishi Naleendra',   district: 'Queenstown',  address: '13 Dempsey Rd',      lat: 1.3063, lng: 103.8162, note: 'Sri Lankan-Australian creative tasting menu at Dempsey Hill', since: 2021, currentSince: 2021, priceSGD: '$$$$', mrt: 'Queenstown' },
-  { name: 'Jaan',           stars: 1, cuisine: 'British Contemporary',  chef: 'Kirk Westaway',     district: 'Marina Bay',  address: '2 Stamford Rd',      lat: 1.2953, lng: 103.8558, note: 'Elevated British produce on the 70th floor of Swissôtel The Stamford', since: 2016, currentSince: 2016, priceSGD: '$$$$', mrt: 'City Hall' },
-  { name: 'Labyrinth',      stars: 1, cuisine: 'Modern Singaporean',    chef: 'LG Han',            district: 'Marina Bay',  address: '1 Fullerton Rd',     lat: 1.2848, lng: 103.8533, note: 'Hawker street classics deconstructed as fine dining narrative', since: 2018, currentSince: 2018, priceSGD: '$$$',  mrt: 'Esplanade' },
-  { name: 'Meta',           stars: 1, cuisine: 'Korean-French',         chef: 'Sun Kim',           district: 'Chinatown',   address: '9 Keong Saik Rd',    lat: 1.2802, lng: 103.8429, note: 'Korean soul with classical French technique on Keong Saik Road', since: 2017, currentSince: 2017, priceSGD: '$$$',  mrt: 'Tanjong Pagar' },
-  { name: 'Nouri',          stars: 1, cuisine: 'Cross-cultural',        chef: 'Ivan Brehm',        district: 'Chinatown',   address: '72 Amoy St',         lat: 1.2800, lng: 103.8463, note: 'Food anthropology as cuisine — explores human migration through taste', since: 2019, currentSince: 2019, priceSGD: '$$$',  mrt: 'Tanjong Pagar' },
-  { name: 'Thevar',         stars: 1, cuisine: 'Modern Indian',         chef: 'Mano Thevar',       district: 'Chinatown',   address: '9 Keong Saik Rd',    lat: 1.2803, lng: 103.8431, note: 'Progressive South Indian cooking rooted in Tamil and Malayalee traditions', since: 2020, currentSince: 2020, priceSGD: '$$$',  mrt: 'Tanjong Pagar' },
-  { name: 'Zén',            stars: 1, cuisine: 'Swedish Contemporary',  chef: 'Björn Frantzén',    district: 'Chinatown',   address: '41 Bukit Pasoh Rd',  lat: 1.2820, lng: 103.8439, note: 'Three-floor immersive Stockholm dining experience transplanted to Bukit Pasoh', since: 2019, currentSince: 2019, priceSGD: '$$$$', mrt: 'Tanjong Pagar' },
-  { name: 'Waku Ghin',      stars: 1, cuisine: 'Contemporary Japanese', chef: 'Tetsuya Wakuda',    district: 'Marina Bay',  address: '10 Bayfront Ave',    lat: 1.2837, lng: 103.8595, note: 'Intimate counter dining inside Marina Bay Sands casino precinct', since: 2016, currentSince: 2016, priceSGD: '$$$$', mrt: 'Bayfront' },
-  { name: 'Sommer',         stars: 1, cuisine: 'European',              chef: 'Akmal Anuar',       district: 'Orchard',     address: '1 Nassim Rd',        lat: 1.3081, lng: 103.8235, note: 'Seasonal European cuisine with subtle Middle Eastern undertones', since: 2022, currentSince: 2022, priceSGD: '$$$',  mrt: 'Orchard' },
-  { name: 'Whitegrass',     stars: 1, cuisine: 'Modern Australian',     chef: 'Sam Aisbett',       district: 'Marina Bay',  address: '30 Victoria St',     lat: 1.2906, lng: 103.8530, note: 'Australian seasonal produce reimagined using Singapore-grown ingredients', since: 2019, currentSince: 2019, priceSGD: '$$$',  mrt: 'City Hall' },
-  { name: 'Opening Gambit', stars: 1, cuisine: 'Modern Asian',          chef: 'Ace Tan',           district: 'Chinatown',   address: '21 Ann Siang Rd',    lat: 1.2803, lng: 103.8447, note: 'Chess-themed progressive Asian tasting menu on Ann Siang Hill', since: 2023, currentSince: 2023, priceSGD: '$$$',  mrt: 'Tanjong Pagar' },
-  { name: 'Li Bai',         stars: 1, cuisine: 'Cantonese',             chef: 'Cheong Kam Hoi',    district: 'Orchard',     address: '39 Scotts Rd',       lat: 1.3077, lng: 103.8318, note: 'Classic Cantonese fine dining at Sheraton Towers — dim sum institution', since: 2016, currentSince: 2016, priceSGD: '$$$',  mrt: 'Orchard' },
-  { name: "Iggy's",         stars: 1, cuisine: 'European',              chef: 'Ignatius Chan',     district: 'Orchard',     address: '581 Orchard Rd',     lat: 1.3066, lng: 103.8300, note: 'Wine-forward eclectic dining — Singapore\'s original destination restaurant since 2004', since: 2016, currentSince: 2016, priceSGD: '$$$$', mrt: 'Orchard' },
+  { name: 'Odette',          stars: 3, cuisine: 'Contemporary French',   chef: 'Julien Royer',      district: 'Marina Bay',    address: '1 St Andrew\'s Rd',    lat: 1.2895, lng: 103.8522, note: 'Seasonal tasting menu inside National Gallery Singapore — produce-driven, technique-precise', since: 2017, currentSince: 2019, priceSGD: '$$$$', mrt: 'City Hall',        history: '1★ 2017 → 2★ 2018 → 3★ 2019' },
+  { name: 'Les Amis',        stars: 3, cuisine: 'Classic French',        chef: 'Sébastien Lepinoy', district: 'Orchard',       address: '1 Scotts Rd',          lat: 1.3041, lng: 103.8319, note: 'Haute cuisine institution — Singapore outpost of a 1994 Parisian legend', since: 2018, currentSince: 2019, priceSGD: '$$$$', mrt: 'Orchard',          history: '2★ 2018 → 3★ 2019' },
+  { name: 'Shoukouwa',       stars: 2, cuisine: 'Edo-style Sushi',       chef: 'Koichiro Oshino',   district: 'Marina Bay',    address: '4 One Fullerton',      lat: 1.2844, lng: 103.8516, note: 'Intimate 10-seat omakase counter, fish flown daily from Tsukiji market', since: 2016, currentSince: 2016, priceSGD: '$$$$', mrt: 'Raffles Place' },
+  { name: 'Shisen Hanten',   stars: 2, cuisine: 'Sichuan Chinese',       chef: 'Chen Kentaro',      district: 'Orchard',       address: '333 Orchard Rd',       lat: 1.3015, lng: 103.8316, note: 'Four-generation Sichuan dynasty — mala tradition meets Japanese precision', since: 2016, currentSince: 2016, priceSGD: '$$$',  mrt: 'Orchard' },
+  { name: 'Burnt Ends',      stars: 1, cuisine: 'Modern Barbecue',       chef: 'Dave Pynt',         district: 'Chinatown',     address: '20 Teck Lim Rd',       lat: 1.2811, lng: 103.8432, note: 'Wood-fired Australian BBQ with custom-built four-tonne kiln', since: 2016, currentSince: 2016, priceSGD: '$$$',  mrt: 'Tanjong Pagar' },
+  { name: 'Candlenut',       stars: 1, cuisine: 'Peranakan',             chef: 'Malcolm Lee',       district: 'Queenstown',    address: '17A Dempsey Rd',       lat: 1.3069, lng: 103.8173, note: 'World\'s first Michelin-starred Peranakan restaurant — nyonya classics elevated', since: 2016, currentSince: 2016, priceSGD: '$$$',  mrt: 'Botanic Gardens' },
+  { name: 'Corner House',    stars: 1, cuisine: 'Gastro-Botanica',       chef: 'Jason Tan',         district: 'Queenstown',    address: '1 Cluny Rd',           lat: 1.3140, lng: 103.8152, note: 'Colonial bungalow inside Singapore Botanic Gardens — garden-to-table philosophy', since: 2016, currentSince: 2016, priceSGD: '$$$$', mrt: 'Botanic Gardens' },
+  { name: 'Cloudstreet',     stars: 1, cuisine: 'Contemporary',          chef: 'Rishi Naleendra',   district: 'Queenstown',    address: '13 Dempsey Rd',        lat: 1.3063, lng: 103.8162, note: 'Sri Lankan-Australian creative tasting menu at Dempsey Hill', since: 2021, currentSince: 2021, priceSGD: '$$$$', mrt: 'Queenstown' },
+  { name: 'Jaan',            stars: 1, cuisine: 'British Contemporary',  chef: 'Kirk Westaway',     district: 'Marina Bay',    address: '2 Stamford Rd',        lat: 1.2953, lng: 103.8558, note: 'British produce on the 70th floor of Swissôtel — sweeping city views', since: 2016, currentSince: 2016, priceSGD: '$$$$', mrt: 'City Hall' },
+  { name: 'Labyrinth',       stars: 1, cuisine: 'Modern Singaporean',    chef: 'LG Han',            district: 'Marina Bay',    address: '1 Fullerton Rd',       lat: 1.2848, lng: 103.8533, note: 'Hawker street classics deconstructed as fine dining narrative', since: 2018, currentSince: 2018, priceSGD: '$$$',  mrt: 'Esplanade' },
+  { name: 'Meta',            stars: 1, cuisine: 'Korean-French',         chef: 'Sun Kim',           district: 'Chinatown',     address: '9 Keong Saik Rd',      lat: 1.2802, lng: 103.8429, note: 'Korean soul with classical French technique on Keong Saik Road', since: 2017, currentSince: 2017, priceSGD: '$$$',  mrt: 'Tanjong Pagar' },
+  { name: 'Nouri',           stars: 1, cuisine: 'Cross-cultural',        chef: 'Ivan Brehm',        district: 'Chinatown',     address: '72 Amoy St',           lat: 1.2800, lng: 103.8463, note: 'Food anthropology as cuisine — explores human migration through taste', since: 2019, currentSince: 2019, priceSGD: '$$$',  mrt: 'Tanjong Pagar' },
+  { name: 'Thevar',          stars: 1, cuisine: 'Modern Indian',         chef: 'Mano Thevar',       district: 'Chinatown',     address: '9 Keong Saik Rd',      lat: 1.2803, lng: 103.8431, note: 'Progressive South Indian cooking rooted in Tamil and Malayalee traditions', since: 2020, currentSince: 2020, priceSGD: '$$$',  mrt: 'Tanjong Pagar' },
+  { name: 'Zén',             stars: 1, cuisine: 'Swedish Contemporary',  chef: 'Björn Frantzén',    district: 'Chinatown',     address: '41 Bukit Pasoh Rd',    lat: 1.2820, lng: 103.8439, note: 'Three-floor immersive Stockholm dining experience transplanted to Bukit Pasoh', since: 2019, currentSince: 2019, priceSGD: '$$$$', mrt: 'Tanjong Pagar' },
+  { name: 'Waku Ghin',       stars: 1, cuisine: 'Contemporary Japanese', chef: 'Tetsuya Wakuda',    district: 'Marina Bay',    address: '10 Bayfront Ave',      lat: 1.2837, lng: 103.8595, note: 'Intimate counter dining inside Marina Bay Sands — counter-style omakase', since: 2016, currentSince: 2016, priceSGD: '$$$$', mrt: 'Bayfront' },
+  { name: 'Sommer',          stars: 1, cuisine: 'European',              chef: 'Akmal Anuar',       district: 'Orchard',       address: '1 Nassim Rd',          lat: 1.3081, lng: 103.8235, note: 'Seasonal European cuisine with subtle Middle Eastern undertones at Nassim Hill', since: 2022, currentSince: 2022, priceSGD: '$$$',  mrt: 'Orchard' },
+  { name: 'Whitegrass',      stars: 1, cuisine: 'Modern Australian',     chef: 'Sam Aisbett',       district: 'Marina Bay',    address: '30 Victoria St',       lat: 1.2906, lng: 103.8530, note: 'Australian seasonal produce reimagined using Singapore-grown ingredients', since: 2019, currentSince: 2019, priceSGD: '$$$',  mrt: 'City Hall' },
+  { name: 'Opening Gambit',  stars: 1, cuisine: 'Modern Asian',          chef: 'Ace Tan',           district: 'Chinatown',     address: '21 Ann Siang Rd',      lat: 1.2803, lng: 103.8447, note: 'Chess-themed progressive Asian tasting menu on Ann Siang Hill', since: 2023, currentSince: 2023, priceSGD: '$$$',  mrt: 'Tanjong Pagar' },
+  { name: 'Li Bai',          stars: 1, cuisine: 'Cantonese',             chef: 'Cheong Kam Hoi',    district: 'Orchard',       address: '39 Scotts Rd',         lat: 1.3077, lng: 103.8318, note: 'Classic Cantonese fine dining at Sheraton Towers — dim sum institution', since: 2016, currentSince: 2016, priceSGD: '$$$',  mrt: 'Orchard' },
+  { name: "Iggy's",          stars: 1, cuisine: 'European',              chef: 'Ignatius Chan',     district: 'Orchard',       address: '581 Orchard Rd',       lat: 1.3066, lng: 103.8300, note: 'Wine-forward eclectic dining — Singapore\'s original destination restaurant since 2004', since: 2016, currentSince: 2016, priceSGD: '$$$$', mrt: 'Orchard' },
+]
+
+// ── Bib Gourmand ─────────────────────────────────────────────────────────────
+const BIB_GOURMAND: BibRestaurant[] = [
+  { name: 'Hawker Chan',                     cuisine: 'Hainanese Chicken Rice', district: 'Chinatown',     address: '78 Smith St',             lat: 1.2820, lng: 103.8452, note: 'World\'s cheapest Michelin meal — soya sauce chicken rice from $3.50, run by chef Liao Fan', since: 2016, mrt: 'Chinatown' },
+  { name: 'Hill Street Tai Hwa Pork Noodle', cuisine: 'Bak Chor Mee',           district: 'Lavender',      address: '466 Crawford Ln',         lat: 1.3077, lng: 103.8640, note: 'Legendary bak chor mee with springy noodles — 90-min queue common; third-generation family stall since 1932', since: 2016, mrt: 'Lavender' },
+  { name: 'Lian He Ben Ji Claypot Rice',     cuisine: 'Claypot Rice',            district: 'Chinatown',     address: '335 Smith St #02-197',    lat: 1.2817, lng: 103.8437, note: 'Charcoal-fired claypot rice at Chinatown Complex — the 45-minute wait is part of the ritual', since: 2016, mrt: 'Chinatown' },
+  { name: 'Ng Ah Sio Bak Kut Teh',           cuisine: 'Bak Kut Teh',             district: 'Novena',        address: '208 Rangoon Rd',          lat: 1.3208, lng: 103.8444, note: 'Peppery Teochew-style bak kut teh with 60+ years of heritage — claypot option is the go-to', since: 2016, mrt: 'Farrer Park' },
+  { name: 'Kok Sen Restaurant',              cuisine: 'Cantonese Zi Char',       district: 'Chinatown',     address: '30 Keong Saik Rd',        lat: 1.2795, lng: 103.8429, note: 'Classic zi char with killer wok hei — prawn paste chicken and oyster omelette are the must-orders', since: 2016, mrt: 'Tanjong Pagar' },
+  { name: 'Hong Kong Soya Sauce Chicken',    cuisine: 'Chicken Rice',            district: 'Chinatown',     address: '335 Smith St #02-126',    lat: 1.2818, lng: 103.8438, note: 'Chinatown Complex hawker — soya sauce chicken with savoury-sweet glaze; Michelin two years running', since: 2018, mrt: 'Chinatown' },
+  { name: 'Famous Sungei Road Trishaw Laksa', cuisine: 'Laksa',                  district: 'Bugis',         address: '531A Upper Cross St',     lat: 1.2856, lng: 103.8432, note: 'Thick, concentrated lemak broth voted consistently among Singapore\'s best laksa', since: 2018, mrt: 'Clarke Quay' },
+  { name: 'Noodle Story',                    cuisine: 'Wonton Noodles',          district: 'Chinatown',     address: '335 Smith St #02-031',    lat: 1.2816, lng: 103.8436, note: 'Japanese-influenced wonton noodles — springy noodles, crispy lard, HK-SG fusion twist', since: 2018, mrt: 'Chinatown' },
+  { name: 'Zai Shun Curry Fish Head',        cuisine: 'Cantonese Zi Char',       district: 'Jurong_East',   address: '253 Jurong East St 24',   lat: 1.3375, lng: 103.7350, note: 'West-side institution — curry fish head with thick, flavourful gravy; Cantonese home cooking at scale', since: 2017, mrt: 'Jurong East' },
+  { name: 'One Prawn & Co',                  cuisine: 'Prawn Noodles',           district: 'Tanjong_Pagar', address: '117 Tanjong Pagar Plaza', lat: 1.2766, lng: 103.8422, note: 'Modern hawker take on prawn mee — rich prawn broth, premium toppings; chef-driven concept', since: 2019, mrt: 'Tanjong Pagar' },
+  { name: 'Rong Cheng Bak Kut Teh',          cuisine: 'Bak Kut Teh',             district: 'Toa_Payoh',     address: '22 Toa Payoh Lorong 7',   lat: 1.3283, lng: 103.8480, note: 'Dark peppery Teochew bak kut teh — claypot option serves a crowd; morning queues are dedicated', since: 2019, mrt: 'Toa Payoh' },
+  { name: 'Chuan Kee Boneless Braised Duck', cuisine: 'Braised Duck Rice',        district: 'Jurong_East',   address: '127 Taman Jurong Market', lat: 1.3395, lng: 103.7316, note: 'Boneless braised duck in soy-fragrant Teochew baste — a west-side legend', since: 2018, mrt: 'Jurong East' },
 ]
 
 // ── Tier config ───────────────────────────────────────────────────────────────
 const TIER = {
-  3: { color: '#ffd700', glow: 'rgba(255,215,0,0.7)',   size: 24, label: 'SUPREME COMMAND', ring: 'rgba(255,215,0,0.2)' },
-  2: { color: '#e2e8f0', glow: 'rgba(226,232,240,0.6)', size: 20, label: 'GRAND COMMAND',   ring: 'rgba(226,232,240,0.15)' },
-  1: { color: '#f0a500', glow: 'rgba(240,165,0,0.55)',  size: 15, label: 'FIELD COMMAND',   ring: 'rgba(240,165,0,0.12)' },
+  3: { color: '#FFD700', glow: 'rgba(255,215,0,0.5)',   size: 22, label: 'Exceptional Cuisine — worth a special journey' },
+  2: { color: '#C0C0C0', glow: 'rgba(192,192,192,0.45)', size: 18, label: 'Excellent Cooking — worth a detour' },
+  1: { color: '#F0A500', glow: 'rgba(240,165,0,0.45)',  size: 14, label: 'High Quality Cooking — worth a stop' },
 } as const
+
+const RED   = '#E4002B'
+const RED_G = 'rgba(228,0,43,0.4)'
 
 const VINTAGE_YEARS = Array.from(new Set(MICHELIN.map(r => r.since))).sort()
 
 // ── Tenure bar ────────────────────────────────────────────────────────────────
-function TenureBar({ since, stars, currentSince }: { since: number; stars: 1 | 2 | 3; currentSince: number }) {
-  const upgradeYear = currentSince > since ? currentSince : null
-  const tenureYrs   = GUIDE_END - since + 1
-  const color       = TIER[stars].color
-
+function TenureBar({ since, color, upgradeYear }: { since: number; color: string; upgradeYear?: number | null }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
       {Array.from({ length: GUIDE_SPAN }, (_, i) => {
         const yr     = GUIDE_START + i
         const active = yr >= since
-        const bright = active && (upgradeYear === null || yr >= upgradeYear)
+        const bright = active && (!upgradeYear || yr >= upgradeYear)
         return (
           <div
             key={yr}
             title={String(yr)}
             style={{
-              width: 5, height: active ? 4 : 2, borderRadius: 1,
-              background: bright ? color : active ? `${color}44` : 'rgba(255,255,255,0.07)',
+              width: 5, height: active ? 5 : 2, borderRadius: 1,
+              background: active
+                ? bright ? color : `${color}44`
+                : 'rgba(255,255,255,0.06)',
               flexShrink: 0,
               transformOrigin: 'bottom',
               animation: 'tenureGrow 0.35s ease both',
@@ -83,36 +100,34 @@ function TenureBar({ since, stars, currentSince }: { since: number; stars: 1 | 2
           />
         )
       })}
-      <span style={{ fontFamily: 'monospace', fontSize: 8, color: 'rgba(240,165,0,0.38)', marginLeft: 5, letterSpacing: 0.5 }}>
-        {since}–{GUIDE_END} · {tenureYrs}YR
+      <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.22)', marginLeft: 6, letterSpacing: 0.3 }}>
+        {since}–{GUIDE_END} · {GUIDE_END - since + 1}yr
       </span>
     </div>
   )
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
+type Tab = 'starred' | 'bib'
+
 export default function MichelinPage() {
-  const mapContainer = useRef<HTMLDivElement>(null)
-  const map          = useRef<mapboxgl.Map | null>(null)
-  const markersRef   = useRef<Record<string, mapboxgl.Marker>>({})
-  const rowRefs      = useRef<Record<string, HTMLDivElement | null>>({})
-  const [selected,   setSelected]   = useState<string | null>(null)
-  const [mapReady,   setMapReady]   = useState(false)
-  const [blinkOn,    setBlinkOn]    = useState(true)
-  const [yearFilter, setYearFilter] = useState<number | null>(null)
-  const [listKey,    setListKey]    = useState(0)
-  const [listFading, setListFading] = useState(false)
+  const mapContainer    = useRef<HTMLDivElement>(null)
+  const map             = useRef<mapboxgl.Map | null>(null)
+  const starMarkers     = useRef<Record<string, mapboxgl.Marker>>({})
+  const bibMarkers      = useRef<Record<string, mapboxgl.Marker>>({})
+  const rowRefs         = useRef<Record<string, HTMLDivElement | null>>({})
+  const [selected,      setSelected]      = useState<string | null>(null)
+  const [mapReady,      setMapReady]      = useState(false)
+  const [tab,           setTab]           = useState<Tab>('starred')
+  const [yearFilter,    setYearFilter]    = useState<number | null>(null)
+  const [listKey,       setListKey]       = useState(0)
+  const [listFading,    setListFading]    = useState(false)
 
-  useEffect(() => {
-    const id = setInterval(() => setBlinkOn(b => !b), 600)
-    return () => clearInterval(id)
-  }, [])
-
+  // ── Map init ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (map.current || !mapContainer.current) return
     const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN
     if (!token) return
-
     map.current = new mapboxgl.Map({
       container:   mapContainer.current,
       accessToken: token,
@@ -124,66 +139,87 @@ export default function MichelinPage() {
     map.current.on('load', () => setMapReady(true))
   }, [])
 
+  // ── Place markers ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!mapReady || !map.current) return
 
+    // Starred markers
     MICHELIN.forEach(r => {
-      const t  = TIER[r.stars]
-
-      // Outer el: plain container — no transitions so Mapbox transform-based
-      // repositioning during zoom/pan is instant (no drift/lag)
+      const t = TIER[r.stars]
       const el = document.createElement('div')
       el.style.cssText = `width:${t.size}px; height:${t.size}px; position:relative; cursor:pointer;`
 
-      // Inner: carries all visuals + hover transitions (isolated from Mapbox transforms)
       const inner = document.createElement('div')
       inner.style.cssText = `
-        width:100%; height:100%;
-        background:${t.color}; border-radius:50%;
-        box-shadow:0 0 ${t.size / 2}px ${t.size / 4}px ${t.glow},
-                   0 0 ${t.size * 1.5}px ${t.size / 2}px ${t.ring};
+        width:100%; height:100%; border-radius:50%;
+        background:${t.color};
+        box-shadow:0 0 ${t.size / 2}px ${t.size / 4}px ${t.glow};
         display:flex; align-items:center; justify-content:center;
-        font-size:${t.size * 0.38}px; color:#000; font-weight:900;
-        font-family:serif;
+        font-size:${Math.round(t.size * 0.38)}px; color:#000; font-weight:900; font-family:serif;
         transition:transform 0.15s, box-shadow 0.15s;
       `
       inner.textContent = '★'.repeat(r.stars)
-      inner.title       = `${r.name}  ${r.stars}★  since ${r.since}`
+      inner.title = `${r.name} · ${r.stars}★`
 
       inner.addEventListener('mouseenter', () => {
-        inner.style.transform = 'scale(1.35)'
-        inner.style.boxShadow = `0 0 ${t.size}px ${t.size / 2}px ${t.glow}, 0 0 ${t.size * 2.5}px ${t.size}px ${t.ring}`
-        inner.style.zIndex    = '999'
+        inner.style.transform = 'scale(1.4)'
+        inner.style.boxShadow = `0 0 ${t.size}px ${t.size / 2}px ${t.glow}`
       })
       inner.addEventListener('mouseleave', () => {
         inner.style.transform = 'scale(1)'
-        inner.style.boxShadow = `0 0 ${t.size / 2}px ${t.size / 4}px ${t.glow}, 0 0 ${t.size * 1.5}px ${t.size / 2}px ${t.ring}`
-        inner.style.zIndex    = ''
+        inner.style.boxShadow = `0 0 ${t.size / 2}px ${t.size / 4}px ${t.glow}`
       })
-      el.addEventListener('click', () => flyTo(r))
+      el.addEventListener('click', () => flyTo(r.name, r.lat, r.lng, 'starred'))
 
-      // Pulse ring — plays once on mount
-      const ring = document.createElement('div')
-      ring.style.cssText = `
-        position:absolute; inset:-6px; border-radius:50%;
+      const pulse = document.createElement('div')
+      pulse.style.cssText = `
+        position:absolute; inset:-5px; border-radius:50%;
         border:2px solid ${t.glow};
-        animation:markerPulse 1.2s ease-out both;
+        animation:markerPulse 1.4s ease-out both;
         pointer-events:none;
       `
+      el.appendChild(inner)
+      el.appendChild(pulse)
+
+      starMarkers.current[r.name] = new mapboxgl.Marker({ element: el, anchor: 'center' })
+        .setLngLat([r.lng, r.lat])
+        .addTo(map.current!)
+    })
+
+    // Bib Gourmand markers — smaller red dots
+    BIB_GOURMAND.forEach(r => {
+      const el = document.createElement('div')
+      el.style.cssText = `width:12px; height:12px; position:relative; cursor:pointer;`
+
+      const inner = document.createElement('div')
+      inner.style.cssText = `
+        width:100%; height:100%; border-radius:50%;
+        background:${RED};
+        box-shadow:0 0 6px 2px ${RED_G};
+        transition:transform 0.15s;
+      `
+      inner.title = `${r.name} · Bib Gourmand`
+
+      inner.addEventListener('mouseenter', () => { inner.style.transform = 'scale(1.5)' })
+      inner.addEventListener('mouseleave', () => { inner.style.transform = 'scale(1)' })
+      el.addEventListener('click', () => flyTo(r.name, r.lat, r.lng, 'bib'))
 
       el.appendChild(inner)
-      el.appendChild(ring)
 
-      markersRef.current[r.name] = new mapboxgl.Marker({ element: el, anchor: 'center' })
+      bibMarkers.current[r.name] = new mapboxgl.Marker({ element: el, anchor: 'center' })
         .setLngLat([r.lng, r.lat])
         .addTo(map.current!)
     })
   }, [mapReady]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  function flyTo(r: Restaurant) {
-    map.current?.flyTo({ center: [r.lng, r.lat], zoom: 15.5, duration: 1200, essential: true })
-    setSelected(r.name)
-    setTimeout(() => rowRefs.current[r.name]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 120)
+  function flyTo(name: string, lat: number, lng: number, targetTab: Tab) {
+    if (tab !== targetTab) {
+      setTab(targetTab)
+      setSelected(null)
+    }
+    map.current?.flyTo({ center: [lng, lat], zoom: 15.5, duration: 1000, essential: true })
+    setSelected(name)
+    setTimeout(() => rowRefs.current[name]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 150)
   }
 
   const handleYearFilter = (yr: number | null) => {
@@ -192,7 +228,13 @@ export default function MichelinPage() {
       setYearFilter(yr)
       setListKey(k => k + 1)
       setListFading(false)
-    }, 180)
+    }, 160)
+  }
+
+  const handleTab = (t: Tab) => {
+    setTab(t)
+    setSelected(null)
+    setYearFilter(null)
   }
 
   const filtered = yearFilter ? MICHELIN.filter(r => r.since === yearFilter) : MICHELIN
@@ -200,19 +242,21 @@ export default function MichelinPage() {
     .map(s => ({ stars: s, items: filtered.filter(r => r.stars === s) }))
     .filter(t => t.items.length > 0)
 
-  const S = {
-    amber:  '#f0a500',
-    gold:   '#ffd700',
-    border: 'rgba(240,165,0,0.22)',
-    bg:     '#000814',
-    panel:  '#00060f',
+  // ── Styles ──────────────────────────────────────────────────────────────────
+  const C = {
+    bg:       '#0d0d0d',
+    panel:    '#111111',
+    border:   'rgba(255,255,255,0.07)',
+    text:     '#F0F0F0',
+    muted:    'rgba(255,255,255,0.38)',
+    faint:    'rgba(255,255,255,0.16)',
   }
 
   return (
     <>
       <style>{`
         @keyframes fadeSlideIn {
-          from { opacity: 0; transform: translateY(8px); }
+          from { opacity: 0; transform: translateY(6px); }
           to   { opacity: 1; transform: translateY(0); }
         }
         @keyframes tenureGrow {
@@ -220,294 +264,361 @@ export default function MichelinPage() {
           to   { transform: scaleY(1); }
         }
         @keyframes markerPulse {
-          0%   { transform: scale(0.8); opacity: 0.7; }
-          100% { transform: scale(2.6); opacity: 0; }
+          0%   { transform: scale(0.8); opacity: 0.6; }
+          100% { transform: scale(2.8); opacity: 0; }
         }
+        .michelin-row:hover { background: rgba(255,255,255,0.03) !important; }
+        .tab-btn { border: none; cursor: pointer; transition: all 0.15s; }
+        .year-pill { border: none; cursor: pointer; transition: all 0.12s; }
+        .year-pill:hover { opacity: 1 !important; }
       `}</style>
+
       <Head>
-        <title>Michelin Star Registry — StorePulse</title>
-        <meta name="description" content="Singapore Michelin star restaurants mapped with tactical precision." />
+        <title>Michelin Guide Singapore — StorePulse</title>
+        <meta name="description" content="Singapore Michelin starred restaurants and Bib Gourmand on the map." />
       </Head>
 
-      {/* Scanline overlay */}
-      <div style={{
-        position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 100,
-        background: 'repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.07) 3px,rgba(0,0,0,0.07) 4px)',
-      }} />
-
-      <div style={{ background: S.bg, minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ background: C.bg, minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
         <Navbar />
 
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden', height: 'calc(100vh - 48px)' }}>
 
-          {/* ── Map ───────────────────────────────────────────────────────── */}
-          <div style={{ flex: '0 0 62%', position: 'relative', borderRight: `1px solid ${S.border}` }}>
+          {/* ── Map ─────────────────────────────────────────────────────────── */}
+          <div style={{ flex: '0 0 60%', position: 'relative', borderRight: `1px solid ${C.border}` }}>
             <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
 
-            {/* HUD overlay */}
+            {/* Map legend */}
             <div style={{
-              position: 'absolute', top: 16, left: 16, pointerEvents: 'none',
-              fontFamily: 'monospace', fontSize: 10, color: S.amber,
-              letterSpacing: 2, lineHeight: 1.85, opacity: 0.75,
+              position: 'absolute', bottom: 20, left: 16,
+              background: 'rgba(13,13,13,0.92)', border: `1px solid ${C.border}`,
+              borderRadius: 8, padding: '12px 16px',
+              backdropFilter: 'blur(12px)',
             }}>
-              <div>SG SECTOR 01°17&apos;N 103°49&apos;E</div>
-              <div>MICHELIN GUIDE {GUIDE_START}–{GUIDE_END}</div>
-              <div style={{ color: S.gold }}>
-                {MICHELIN.filter(r => r.stars === 3).length}× ★★★ &nbsp;
-                {MICHELIN.filter(r => r.stars === 2).length}× ★★ &nbsp;
-                {MICHELIN.filter(r => r.stars === 1).length}× ★
+              <div style={{ fontSize: 9, color: C.faint, letterSpacing: 2, marginBottom: 10, fontFamily: 'monospace' }}>
+                MICHELIN GUIDE SINGAPORE {GUIDE_START}–{GUIDE_END}
               </div>
-              {yearFilter && (
-                <div style={{ color: '#fff', marginTop: 3, fontSize: 9 }}>
-                  ▶ CLASS OF {yearFilter} ACTIVE
-                </div>
-              )}
-            </div>
-
-            {/* Legend */}
-            <div style={{
-              position: 'absolute', bottom: 24, left: 16,
-              background: 'rgba(0,6,14,0.88)', border: `1px solid ${S.border}`,
-              borderRadius: 6, padding: '10px 14px',
-              fontFamily: 'monospace', fontSize: 11, backdropFilter: 'blur(8px)',
-            }}>
               {([3, 2, 1] as const).map(s => (
-                <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: s > 1 ? 6 : 0 }}>
+                <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
                   <div style={{
                     width: TIER[s].size, height: TIER[s].size, background: TIER[s].color,
-                    borderRadius: '50%', boxShadow: `0 0 ${TIER[s].size / 2}px ${TIER[s].size / 4}px ${TIER[s].glow}`,
+                    borderRadius: '50%', boxShadow: `0 0 6px 2px ${TIER[s].glow}`,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: TIER[s].size * 0.38, color: '#000', fontWeight: 900,
+                    fontSize: Math.round(TIER[s].size * 0.38), color: '#000', fontWeight: 900,
                     flexShrink: 0, fontFamily: 'serif',
                   }}>{'★'.repeat(s)}</div>
-                  <span style={{ color: TIER[s].color }}>{'★'.repeat(s) + '☆'.repeat(3 - s)}</span>
-                  <span style={{ color: 'rgba(240,165,0,0.45)' }}>
-                    {MICHELIN.filter(r => r.stars === s).length} restaurants
-                  </span>
+                  <div>
+                    <span style={{ color: TIER[s].color, fontSize: 11, fontWeight: 600 }}>
+                      {s === 3 ? '3 Stars' : s === 2 ? '2 Stars' : '1 Star'}
+                    </span>
+                    <span style={{ color: C.faint, fontSize: 10, marginLeft: 6 }}>
+                      {MICHELIN.filter(r => r.stars === s).length}
+                    </span>
+                  </div>
                 </div>
               ))}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
+                <div style={{ width: 12, height: 12, background: RED, borderRadius: '50%', boxShadow: `0 0 6px 2px ${RED_G}`, flexShrink: 0 }} />
+                <div>
+                  <span style={{ color: RED, fontSize: 11, fontWeight: 600 }}>Bib Gourmand</span>
+                  <span style={{ color: C.faint, fontSize: 10, marginLeft: 6 }}>{BIB_GOURMAND.length}</span>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* ── Intel Panel ───────────────────────────────────────────────── */}
-          <div style={{
-            flex: '0 0 38%', background: S.panel,
-            display: 'flex', flexDirection: 'column', overflow: 'hidden',
-          }}>
+          {/* ── Panel ───────────────────────────────────────────────────────── */}
+          <div style={{ flex: '0 0 40%', background: C.panel, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-            {/* Header ──────────────────────────────────────────────────── */}
-            <div style={{ padding: '16px 20px 14px', borderBottom: `1px solid ${S.border}`, flexShrink: 0 }}>
-              <div style={{ fontFamily: 'monospace', fontSize: 9, letterSpacing: 4, color: S.amber, marginBottom: 5, opacity: 0.75 }}>
-                ▸ CULINARY INTEL · MICHELIN GUIDE SINGAPORE EST. {GUIDE_START}
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 3 }}>
-                <span style={{ fontFamily: 'monospace', fontSize: 17, fontWeight: 900, color: '#fff', letterSpacing: 1.5 }}>
-                  MICHELIN STAR REGISTRY
-                </span>
-                <span style={{ color: S.amber, fontFamily: 'monospace', fontSize: 9 }}>
-                  {blinkOn ? '▮' : '▯'}
-                </span>
-              </div>
-
-              <div style={{ fontFamily: 'monospace', fontSize: 9, color: S.amber, opacity: 0.55, letterSpacing: 2, marginBottom: 12 }}>
-                SINGAPORE SECTOR · {filtered.length}/{MICHELIN.length} TARGETS
-                {yearFilter ? ` · CLASS ${yearFilter}` : ' · ALL CLASSES'}
-              </div>
-
-              {/* Tier stats */}
-              <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginBottom: 13 }}>
-                {([3, 2, 1] as const).map(s => {
-                  const count = filtered.filter(r => r.stars === s).length
-                  return (
-                    <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 5, opacity: count === 0 ? 0.25 : 1, transition: 'opacity 0.2s' }}>
-                      <span style={{ color: TIER[s].color, fontFamily: 'monospace', fontSize: 11, textShadow: `0 0 6px ${TIER[s].glow}` }}>
-                        {'★'.repeat(s)}
-                      </span>
-                      <span style={{ fontFamily: 'monospace', fontSize: 11, color: TIER[s].color, fontWeight: 700 }}>
-                        {count}
-                      </span>
-                    </div>
-                  )
-                })}
-                <div style={{ flex: 1, height: 2, background: 'rgba(240,165,0,0.12)', borderRadius: 1 }}>
-                  <div style={{
-                    width: `${(filtered.length / MICHELIN.length) * 100}%`, height: '100%',
-                    background: `linear-gradient(90deg, ${S.gold}, ${S.amber})`,
-                    borderRadius: 1, transition: 'width 0.3s',
-                  }} />
+            {/* Header */}
+            <div style={{ padding: '18px 20px 0', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                <div style={{
+                  width: 28, height: 28, borderRadius: '50%', background: RED,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 13, fontWeight: 900, color: '#fff', flexShrink: 0,
+                }}>M</div>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: C.text, letterSpacing: 0.3 }}>
+                    Michelin Guide Singapore
+                  </div>
+                  <div style={{ fontSize: 10, color: C.muted }}>
+                    {MICHELIN.length} starred · {BIB_GOURMAND.length} Bib Gourmand
+                  </div>
                 </div>
               </div>
 
-              {/* Vintage year filter ──────────────────────────────────── */}
-              <div>
-                <div style={{ fontFamily: 'monospace', fontSize: 8, color: 'rgba(240,165,0,0.35)', letterSpacing: 3, marginBottom: 6 }}>
-                  VINTAGE CLASS
-                </div>
-                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+              {/* Tabs */}
+              <div style={{ display: 'flex', gap: 0 }}>
+                {([
+                  { id: 'starred' as Tab, label: '★ Starred', count: filtered.length },
+                  { id: 'bib'     as Tab, label: '◎ Bib Gourmand', count: BIB_GOURMAND.length },
+                ]).map(t => (
+                  <button
+                    key={t.id}
+                    className="tab-btn"
+                    onClick={() => handleTab(t.id)}
+                    style={{
+                      flex: 1, padding: '9px 0 11px',
+                      background: 'transparent',
+                      color: tab === t.id ? C.text : C.muted,
+                      fontSize: 12, fontWeight: tab === t.id ? 700 : 400,
+                      borderBottom: tab === t.id ? `2px solid ${t.id === 'starred' ? '#F0A500' : RED}` : '2px solid transparent',
+                    }}
+                  >
+                    {t.label}
+                    <span style={{
+                      marginLeft: 6, fontSize: 10, fontWeight: 400,
+                      color: tab === t.id ? C.muted : C.faint,
+                    }}>
+                      {t.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Year filter — starred tab only */}
+            {tab === 'starred' && (
+              <div style={{ padding: '10px 20px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ fontSize: 9, color: C.faint, letterSpacing: 1, marginRight: 4, fontFamily: 'monospace' }}>
+                    VINTAGE
+                  </span>
                   {[null, ...VINTAGE_YEARS].map(yr => {
                     const active = yr === yearFilter
                     return (
                       <button
                         key={yr ?? 'all'}
+                        className="year-pill"
                         onClick={() => handleYearFilter(yr === yearFilter ? null : yr)}
                         style={{
-                          fontFamily: 'monospace', fontSize: 9, letterSpacing: 1,
-                          padding: '3px 7px', borderRadius: 3,
-                          border: `1px solid ${active ? S.amber : 'rgba(240,165,0,0.18)'}`,
-                          background: active ? 'rgba(240,165,0,0.14)' : 'transparent',
-                          color: active ? S.amber : 'rgba(240,165,0,0.38)',
-                          cursor: 'pointer', transition: 'all 0.15s',
+                          padding: '3px 8px', borderRadius: 4,
+                          background: active
+                            ? 'rgba(240,165,0,0.15)'
+                            : 'rgba(255,255,255,0.04)',
+                          color: active ? '#F0A500' : C.muted,
+                          fontSize: 10, fontWeight: active ? 700 : 400,
+                          outline: active ? '1px solid rgba(240,165,0,0.4)' : '1px solid transparent',
+                          opacity: active ? 1 : 0.8,
                         }}
                       >
-                        {yr ?? 'ALL'}
+                        {yr ?? 'All'}
                       </button>
                     )
                   })}
                 </div>
               </div>
-            </div>
+            )}
 
-            {/* Restaurant list ──────────────────────────────────────────── */}
-            <div key={listKey} style={{ flex: 1, overflowY: 'auto', paddingBottom: 24, transition: 'opacity 0.18s', opacity: listFading ? 0.3 : 1 }}>
-              {tiers.map(({ stars, items }) => {
-                const t = TIER[stars]
-                return (
-                  <div key={stars}>
-
-                    {/* Section header */}
-                    <div style={{
-                      padding: '8px 20px 7px',
-                      background: t.ring,
-                      borderBottom: `1px solid ${t.color}20`,
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      position: 'sticky', top: 0, zIndex: 10,
-                    }}>
-                      <span style={{ color: t.color, fontFamily: 'monospace', fontSize: 12, fontWeight: 900, textShadow: `0 0 8px ${t.glow}` }}>
-                        {'★'.repeat(stars)}{'☆'.repeat(3 - stars)}
-                      </span>
-                      <span style={{ fontFamily: 'monospace', fontSize: 9, color: t.color, letterSpacing: 3, opacity: 0.8 }}>
-                        {t.label}
-                      </span>
-                      <span style={{ marginLeft: 'auto', fontFamily: 'monospace', fontSize: 9, color: t.color, opacity: 0.45 }}>
-                        {items.length} ID
-                      </span>
-                    </div>
-
-                    {/* Rows */}
-                    {items.map((r, idx) => {
-                      const isSel = selected === r.name
-                      return (
-                        <div
-                          key={r.name}
-                          ref={el => { rowRefs.current[r.name] = el }}
-                          onClick={() => flyTo(r)}
-                          style={{
-                            padding: '10px 18px 10px 20px',
-                            borderBottom: `1px solid rgba(240,165,0,0.05)`,
-                            borderLeft: isSel ? `3px solid ${t.color}` : '3px solid transparent',
-                            background: isSel ? 'rgba(240,165,0,0.06)' : 'transparent',
-                            cursor: 'pointer',
-                            transition: 'background 0.15s, border-left-color 0.15s',
-                            animation: 'fadeSlideIn 0.38s ease both',
-                            animationDelay: `${idx * 38}ms`,
-                          }}
-                          onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = 'rgba(240,165,0,0.03)' }}
-                          onMouseLeave={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = 'transparent' }}
-                        >
-                          {/* Line 1 — index · name · year badge · stars */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
-                            <span style={{ fontFamily: 'monospace', fontSize: 9, color: 'rgba(240,165,0,0.28)', minWidth: 16 }}>
-                              {String(idx + 1).padStart(2, '0')}
+            {/* List */}
+            <div
+              key={listKey}
+              style={{
+                flex: 1, overflowY: 'auto', paddingBottom: 32,
+                transition: 'opacity 0.16s', opacity: listFading ? 0.25 : 1,
+              }}
+            >
+              {tab === 'starred' && (
+                <>
+                  {tiers.map(({ stars, items }) => {
+                    const t = TIER[stars]
+                    return (
+                      <div key={stars}>
+                        {/* Tier header */}
+                        <div style={{
+                          padding: '10px 20px', position: 'sticky', top: 0, zIndex: 5,
+                          background: C.panel, borderBottom: `1px solid ${C.border}`,
+                          display: 'flex', alignItems: 'center', gap: 10,
+                        }}>
+                          <span style={{ color: t.color, fontSize: 13, fontFamily: 'serif' }}>
+                            {'★'.repeat(stars)}
+                          </span>
+                          <div>
+                            <span style={{ color: t.color, fontSize: 12, fontWeight: 700 }}>
+                              {stars} Star{stars > 1 ? 's' : ''}
                             </span>
-                            <span style={{
-                              fontFamily: 'monospace', fontSize: 12, fontWeight: 700, flex: 1,
-                              color: isSel ? t.color : '#e2e8f0', letterSpacing: 0.5,
-                              textShadow: isSel ? `0 0 12px ${t.glow}` : 'none',
-                            }}>
-                              {r.name.toUpperCase()}
-                            </span>
-                            {/* Year badge */}
-                            <span style={{
-                              fontFamily: 'monospace', fontSize: 8, letterSpacing: 0.5,
-                              color: t.color, opacity: 0.8,
-                              border: `1px solid ${t.color}44`,
-                              padding: '1px 5px', borderRadius: 2,
-                              background: `${t.color}10`, flexShrink: 0,
-                            }}>
-                              {r.since}
-                            </span>
-                            <span style={{ fontFamily: 'monospace', fontSize: 10, color: t.color, letterSpacing: 1, flexShrink: 0 }}>
-                              {'★'.repeat(stars)}
+                            <span style={{ color: C.faint, fontSize: 10, marginLeft: 8 }}>
+                              {t.label.split('—')[0].trim()}
                             </span>
                           </div>
-
-                          {/* Line 2 — cuisine · chef · MRT · price */}
-                          <div style={{ display: 'flex', gap: 5, marginBottom: 5, paddingLeft: 23, flexWrap: 'wrap', alignItems: 'center' }}>
-                            <span style={{ fontFamily: 'monospace', fontSize: 9, color: 'rgba(240,165,0,0.55)', letterSpacing: 0.8 }}>
-                              {r.cuisine.toUpperCase()}
-                            </span>
-                            <span style={{ color: 'rgba(240,165,0,0.2)', fontFamily: 'monospace' }}>·</span>
-                            <span style={{ fontFamily: 'monospace', fontSize: 9, color: 'rgba(255,255,255,0.3)' }}>
-                              {r.chef}
-                            </span>
-                            <span style={{ color: 'rgba(240,165,0,0.2)', fontFamily: 'monospace' }}>·</span>
-                            <span style={{ fontFamily: 'monospace', fontSize: 9, color: 'rgba(240,165,0,0.42)' }}>
-                              {r.mrt} MRT
-                            </span>
-                            <span style={{ fontFamily: 'monospace', fontSize: 9, color: 'rgba(255,215,0,0.45)', letterSpacing: 0.5 }}>
-                              {r.priceSGD}
-                            </span>
-                          </div>
-
-                          {/* Line 3 — tenure bar */}
-                          <div style={{ paddingLeft: 23, marginBottom: r.history ? 4 : 0 }}>
-                            <TenureBar since={r.since} stars={r.stars} currentSince={r.currentSince} />
-                          </div>
-
-                          {/* Line 4 — star ascension history */}
-                          {r.history && (
-                            <div style={{ paddingLeft: 23, marginTop: 3 }}>
-                              <span style={{ fontFamily: 'monospace', fontSize: 8, color: 'rgba(255,215,0,0.55)', letterSpacing: 0.5 }}>
-                                ↑ {r.history}
-                              </span>
-                            </div>
-                          )}
-
-                          {/* Expanded note when selected */}
-                          {isSel && (
-                            <div style={{
-                              marginTop: 8, paddingLeft: 23,
-                              fontFamily: 'monospace', fontSize: 9,
-                              color: 'rgba(240,165,0,0.62)',
-                              borderTop: `1px solid ${t.color}15`, paddingTop: 6,
-                              letterSpacing: 0.5, lineHeight: 1.6,
-                            }}>
-                              ▸ {r.note}
-                              <div style={{ marginTop: 4, color: 'rgba(240,165,0,0.35)' }}>
-                                {r.address} · {r.district}
-                              </div>
-                            </div>
-                          )}
+                          <span style={{ marginLeft: 'auto', fontSize: 10, color: C.faint }}>
+                            {items.length}
+                          </span>
                         </div>
-                      )
-                    })}
-                  </div>
-                )
-              })}
 
-              {/* Empty state */}
-              {filtered.length === 0 && (
-                <div style={{ padding: '40px 20px', textAlign: 'center', fontFamily: 'monospace', fontSize: 10, color: 'rgba(240,165,0,0.3)' }}>
-                  NO TARGETS IN CLASS {yearFilter}
+                        {/* Rows */}
+                        {items.map((r, idx) => {
+                          const isSel = selected === r.name
+                          const upgradeYear = r.currentSince > r.since ? r.currentSince : undefined
+                          return (
+                            <div
+                              key={r.name}
+                              ref={el => { rowRefs.current[r.name] = el }}
+                              className="michelin-row"
+                              onClick={() => flyTo(r.name, r.lat, r.lng, 'starred')}
+                              style={{
+                                padding: '12px 20px',
+                                borderBottom: `1px solid ${C.border}`,
+                                borderLeft: isSel ? `3px solid ${t.color}` : '3px solid transparent',
+                                background: isSel ? `${t.color}0d` : 'transparent',
+                                cursor: 'pointer',
+                                transition: 'background 0.12s, border-left-color 0.12s',
+                                animation: 'fadeSlideIn 0.32s ease both',
+                                animationDelay: `${idx * 35}ms`,
+                              }}
+                            >
+                              {/* Name row */}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                                <span style={{ fontSize: 9, color: C.faint, fontFamily: 'monospace', minWidth: 18 }}>
+                                  {String(idx + 1).padStart(2, '0')}
+                                </span>
+                                <span style={{
+                                  fontSize: 13, fontWeight: 700, flex: 1, color: isSel ? t.color : C.text,
+                                  transition: 'color 0.12s',
+                                }}>
+                                  {r.name}
+                                </span>
+                                <span style={{
+                                  fontSize: 9, color: t.color, fontFamily: 'monospace',
+                                  background: `${t.color}14`, padding: '2px 6px', borderRadius: 3,
+                                  border: `1px solid ${t.color}30`, flexShrink: 0,
+                                }}>
+                                  {r.since}
+                                </span>
+                              </div>
+
+                              {/* Meta row */}
+                              <div style={{ display: 'flex', gap: 6, alignItems: 'center', paddingLeft: 26, marginBottom: 8, flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: 10, color: C.muted }}>{r.cuisine}</span>
+                                <span style={{ color: C.faint, fontSize: 9 }}>·</span>
+                                <span style={{ fontSize: 10, color: C.faint }}>{r.chef}</span>
+                                <span style={{ color: C.faint, fontSize: 9 }}>·</span>
+                                <span style={{ fontSize: 10, color: C.faint }}>{r.mrt} MRT</span>
+                                <span style={{ fontSize: 10, color: '#C8A951', letterSpacing: 0.5 }}>{r.priceSGD}</span>
+                              </div>
+
+                              {/* Tenure bar */}
+                              <div style={{ paddingLeft: 26 }}>
+                                <TenureBar since={r.since} color={t.color} upgradeYear={upgradeYear} />
+                              </div>
+
+                              {/* Star ascension */}
+                              {r.history && (
+                                <div style={{ paddingLeft: 26, marginTop: 5 }}>
+                                  <span style={{ fontSize: 9, color: 'rgba(255,215,0,0.45)', letterSpacing: 0.3 }}>
+                                    ↑ {r.history}
+                                  </span>
+                                </div>
+                              )}
+
+                              {/* Expanded note */}
+                              {isSel && (
+                                <div style={{
+                                  marginTop: 10, paddingLeft: 26, paddingTop: 8,
+                                  borderTop: `1px solid ${t.color}18`,
+                                  fontSize: 11, color: C.muted, lineHeight: 1.6,
+                                }}>
+                                  {r.note}
+                                  <div style={{ marginTop: 5, fontSize: 10, color: C.faint }}>
+                                    {r.address} · {r.district.replace('_', ' ')}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  })}
+
+                  {filtered.length === 0 && (
+                    <div style={{ padding: '48px 20px', textAlign: 'center', fontSize: 12, color: C.faint }}>
+                      No starred restaurants in {yearFilter}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {tab === 'bib' && (
+                <div>
+                  {/* Bib header */}
+                  <div style={{
+                    padding: '10px 20px', position: 'sticky', top: 0, zIndex: 5,
+                    background: C.panel, borderBottom: `1px solid ${C.border}`,
+                    display: 'flex', alignItems: 'center', gap: 10,
+                  }}>
+                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: RED, flexShrink: 0 }} />
+                    <span style={{ color: RED, fontSize: 12, fontWeight: 700 }}>Bib Gourmand</span>
+                    <span style={{ color: C.faint, fontSize: 10 }}>Good quality, good value</span>
+                    <span style={{ marginLeft: 'auto', fontSize: 10, color: C.faint }}>{BIB_GOURMAND.length}</span>
+                  </div>
+
+                  {BIB_GOURMAND.map((r, idx) => {
+                    const isSel = selected === r.name
+                    return (
+                      <div
+                        key={r.name}
+                        ref={el => { rowRefs.current[r.name] = el }}
+                        className="michelin-row"
+                        onClick={() => flyTo(r.name, r.lat, r.lng, 'bib')}
+                        style={{
+                          padding: '12px 20px',
+                          borderBottom: `1px solid ${C.border}`,
+                          borderLeft: isSel ? `3px solid ${RED}` : '3px solid transparent',
+                          background: isSel ? 'rgba(228,0,43,0.07)' : 'transparent',
+                          cursor: 'pointer',
+                          transition: 'background 0.12s, border-left-color 0.12s',
+                          animation: 'fadeSlideIn 0.32s ease both',
+                          animationDelay: `${idx * 30}ms`,
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                          <span style={{ fontSize: 9, color: C.faint, fontFamily: 'monospace', minWidth: 18 }}>
+                            {String(idx + 1).padStart(2, '0')}
+                          </span>
+                          <span style={{ fontSize: 13, fontWeight: 700, flex: 1, color: isSel ? RED : C.text, transition: 'color 0.12s' }}>
+                            {r.name}
+                          </span>
+                          <span style={{
+                            fontSize: 9, color: RED, fontFamily: 'monospace',
+                            background: 'rgba(228,0,43,0.1)', padding: '2px 6px', borderRadius: 3,
+                            border: '1px solid rgba(228,0,43,0.25)', flexShrink: 0,
+                          }}>
+                            {r.since}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center', paddingLeft: 26, marginBottom: 8, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 10, color: C.muted }}>{r.cuisine}</span>
+                          <span style={{ color: C.faint, fontSize: 9 }}>·</span>
+                          <span style={{ fontSize: 10, color: C.faint }}>{r.mrt} MRT</span>
+                          <span style={{ fontSize: 10, color: C.faint }}>· {r.district.replace('_', ' ')}</span>
+                        </div>
+
+                        <div style={{ paddingLeft: 26 }}>
+                          <TenureBar since={r.since} color={RED} />
+                        </div>
+
+                        {isSel && (
+                          <div style={{
+                            marginTop: 10, paddingLeft: 26, paddingTop: 8,
+                            borderTop: 'rgba(228,0,43,0.15) 1px solid',
+                            fontSize: 11, color: C.muted, lineHeight: 1.6,
+                          }}>
+                            {r.note}
+                            <div style={{ marginTop: 5, fontSize: 10, color: C.faint }}>{r.address}</div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
 
               {/* Footer */}
-              <div style={{ padding: '16px 20px', fontFamily: 'monospace', fontSize: 9, color: 'rgba(240,165,0,0.18)', letterSpacing: 2, lineHeight: 2 }}>
+              <div style={{ padding: '20px 20px 8px', fontSize: 9, color: C.faint, fontFamily: 'monospace', letterSpacing: 1, lineHeight: 2 }}>
                 <div>SOURCE: MICHELIN GUIDE SINGAPORE {GUIDE_START}–{GUIDE_END}</div>
-                <div>CLASSIFICATION: CULINARY INTELLIGENCE DIVISION</div>
-                <div>SELECT TARGET TO ACQUIRE COORDINATES</div>
+                <div>CLICK ANY RESTAURANT TO FLY TO ITS LOCATION</div>
               </div>
             </div>
           </div>

@@ -197,7 +197,7 @@ const typed = rows as unknown as MyType[]
 | `lib/db.ts` | postgres.js singleton — `getDb()` returns sql instance or null if no DATABASE_URL |
 | `pages/map.tsx` | Main map: `CATEGORY_COLORS`, `SIGNAL_INTEL`, `CITY_CONFIG`, `SINGAPORE_DISTRICTS` |
 | `pages/discover.tsx` | Hawker rankings + MRT mall finder + Jurong East tab + random picker |
-| `pages/michelin.tsx` | Michelin restaurants with tenure timeline + vintage filter + entrance animations |
+| `pages/michelin.tsx` | Michelin Guide: starred restaurants (1★–3★) + Bib Gourmand tab, tenure bars, vintage filter, fly-to |
 | `pages/pitch.tsx` | Investor deck with live stats |
 | `pages/api/places.ts` | Core spatial query + admin Google refresh |
 | `pages/api/places-list.ts` | Paginated category bulk load — `GET ?category=&city=&offset=&limit=` |

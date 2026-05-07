@@ -5,7 +5,7 @@ Location intelligence platform for Singapore SMEs and angel investor pitch. Visu
 ## What It Does
 
 - **Signal map** — 14-category Mapbox heatmap across 19 Singapore districts with per-category signal intelligence (cafe density = office cluster, laundromat density = transient population, etc.)
-- **Michelin** — All Singapore Michelin-starred restaurants with tenure timelines, star ascension history, and vintage filter
+- **Michelin** — Starred restaurants (1★–3★) with tenure bars and star ascension history, plus a full Bib Gourmand tab with 12 hawker and zi char picks; vintage filter and fly-to-map on click
 - **Discover** — Hawker centre rankings by review count + NEA grade, MRT mall finder, Jurong East quick-access tab, and a random picker with Claude prompt export
 - **Dead Zones** — Areas with high closed-store density flagged with ☠ markers and dark heatmap
 - **Time Machine** — Replays store openings and closures year by year
@@ -32,7 +32,7 @@ Location intelligence platform for Singapore SMEs and angel investor pitch. Visu
 |---|---|
 | `/map` | Mapbox heatmap + signal intelligence panel, admin Google refresh |
 | `/discover` | Hawker rankings, MRT mall finder, Jurong East tab, 🎲 random picker |
-| `/michelin` | Michelin restaurants with animated tenure bars + vintage filter |
+| `/michelin` | Michelin starred restaurants (1★–3★) + Bib Gourmand tab, tenure bars, vintage filter |
 | `/time-machine` | Year-by-year store opening/closure trends |
 | `/pitch` | VC snapshot with live DB stats |
 | `/intro` | B2B landing page |
