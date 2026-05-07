@@ -4,23 +4,25 @@ Location intelligence platform for Singapore SMEs and angel investor pitch. Visu
 
 ## What It Does
 
-- **Michelin map** — All Singapore Michelin-starred restaurants with tenure timelines, star ascension history, and vintage filter
+- **Signal map** — 14-category Mapbox heatmap across 19 Singapore districts with per-category signal intelligence (cafe density = office cluster, laundromat density = transient population, etc.)
+- **Michelin** — All Singapore Michelin-starred restaurants with tenure timelines, star ascension history, and vintage filter
 - **Discover** — Hawker centre rankings by review count + NEA grade, MRT mall finder, Jurong East quick-access tab, and a random picker with Claude prompt export
 - **Dead Zones** — Areas with high closed-store density flagged with ☠ markers and dark heatmap
 - **Time Machine** — Replays store openings and closures year by year
 - **Pitch deck** — Live investor stats pulled from the database
+- **Open data layer** — Newly registered businesses (ACRA), SFA food licenses + hygiene grades, population density by planning area (SingStat)
 
 ## Tech Stack
 
 | Layer | Technology |
 |---|---|
-| Framework | [Next.js 14](https://nextjs.org/) + TypeScript |
+| Framework | [Next.js 13](https://nextjs.org/) + TypeScript |
 | Database | PostgreSQL + PostGIS (Docker locally / Cloud SQL in production) |
 | DB client | [postgres.js](https://github.com/porsager/postgres) — tagged template SQL, no ORM |
 | Map | [Mapbox GL JS](https://www.mapbox.com/) |
 | Styling | [Tailwind CSS](https://tailwindcss.com/) |
 | Auth | Custom bearer token (`ADMIN_SECRET`) + sessionStorage on client |
-| Data sources | Google Places API · NEA · LTA DataMall · OneMap · ACRA |
+| Data sources | Google Places API · NEA/SFA · LTA DataMall · OneMap · ACRA · SingStat |
 | Scripting | Python 3 (ETL pipeline in `scripts/`) |
 | Deployment | GCP Cloud Run (asia-southeast1) via Cloud Build |
 
@@ -51,10 +53,12 @@ PostgreSQL + PostGIS
   └─ Cloud SQL (production) · Docker (local)
   └─ places — core store table (14 categories, SG + Taipei)
   └─ sg_hawker_centres, sg_bus_stops, sg_planning_areas, sg_hdb_prices
+  └─ sg_sfa_licenses, sg_new_businesses, sg_population (open data)
   └─ zone_density, dead_zone_clusters (materialized views)
+  └─ sg_area_opportunity — stores per 1k residents (underserved area signal)
 
 Python ETL (scripts/)
-  └─ Google Places scrape, NEA hawker data, LTA bus stops, OneMap, ACRA
+  └─ Google Places scrape (all 14 categories), NEA, SFA, LTA, OneMap, ACRA, SingStat
 ```
 
 ## Getting Started
@@ -97,6 +101,7 @@ docker-compose up -d
 # Run schema + seed
 docker-compose exec -T db psql -U storepulse storepulse < db/init_all.sql
 docker-compose exec -T db psql -U storepulse storepulse < db/sg_enrichment.sql
+docker-compose exec -T db psql -U storepulse storepulse < db/sg_open_data.sql
 
 # Start Next.js
 npm install
@@ -110,28 +115,36 @@ npm run dev
 # Connect and run schema
 psql $DATABASE_URL < db/init_all.sql
 psql $DATABASE_URL < db/sg_enrichment.sql
+psql $DATABASE_URL < db/sg_open_data.sql
 ```
 
 ## Data Pipeline
 
-### Seed Singapore stores
+### Seed Singapore stores (all 14 categories)
 
 ```bash
 cd scripts/fetch
 pip install -r requirements.txt
 
-python fetch_places.py --city singapore --category "coffee shop"
-python fetch_places.py --city singapore --category "hawker centre"
-# etc.
+for cat in "coffee shop" "hawker centre" "restaurant" "bakery" "beverage store" \
+           "convenience store" "grocery" "supermarket" "pharmacy" "gym" \
+           "coworking" "childcare" "laundromat" "shopping mall"; do
+  python fetch_places.py --city singapore --category "$cat"
+done
 ```
 
-### Singapore government data
+### Singapore government open data
 
 ```bash
-python fetch_sg_govdata.py      # NEA hawker centres + grades
-python fetch_lta_busstops.py    # LTA bus stops → bus_stops_400m
-python fetch_onemap_boundaries.py  # 55 planning area polygons
-python fetch_acra.py            # ACRA company registration/closure
+python fetch_sg_govdata.py          # NEA hawker centres + grades
+python fetch_lta_busstops.py        # LTA bus stops → bus_stops_400m
+python fetch_onemap_boundaries.py   # 55 planning area polygons
+python fetch_acra.py                # ACRA company registration/closure
+
+# New open data pipeline:
+python fetch_sfa_licenses.py        # 36k+ NEA eating establishments + hygiene grades
+python fetch_population.py          # SingStat population by planning area
+python fetch_new_businesses.py --csv sg_bizfile.csv  # ACRA newly registered businesses
 ```
 
 ### Refresh materialized views
@@ -184,6 +197,7 @@ gcloud builds submit --config cloudbuild.yaml
 | `lib/db.ts` | postgres.js singleton — `getDb()` |
 | `db/init_all.sql` | Full schema + seed (safe to re-run) |
 | `db/sg_enrichment.sql` | SG-specific tables and columns |
+| `db/sg_open_data.sql` | Open data tables: sg_new_businesses, sg_sfa_licenses, sg_population |
 | `docker-compose.yml` | Local dev: PostGIS + Next.js |
 | `cloudbuild.yaml` | GCP CI/CD pipeline |
 | `pages/map.tsx` | Main map page |

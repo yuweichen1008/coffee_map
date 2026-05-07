@@ -35,6 +35,14 @@ grep -r "supabase" pages/ components/ lib/ --include="*.ts" --include="*.tsx" -l
 # DB schema reset (run after docker-compose up -d db)
 docker-compose exec -T db psql -U storepulse storepulse < db/init_all.sql
 docker-compose exec -T db psql -U storepulse storepulse < db/sg_enrichment.sql
+docker-compose exec -T db psql -U storepulse storepulse < db/sg_open_data.sql
+
+# Seed all 14 categories (run from scripts/fetch/)
+for cat in "coffee shop" "hawker centre" "restaurant" "bakery" "beverage store" \
+           "convenience store" "grocery" "supermarket" "pharmacy" "gym" \
+           "coworking" "childcare" "laundromat" "shopping mall"; do
+  python3 fetch_places.py --city singapore --category "$cat"
+done
 
 # Deploy
 gcloud builds submit --config cloudbuild.yaml
@@ -45,7 +53,7 @@ gcloud builds submit --config cloudbuild.yaml
 ## Critical Context (read before any session)
 
 - **Active city: Singapore.** Default city on map, all new features target SG first.
-- **Core moat:** Dead Zones (closed store clusters) + SG government data reconciliation + 13-category signal matrix.
+- **Core moat:** Dead Zones (closed store clusters) + SG government data reconciliation + 14-category signal matrix.
 - **`places` table** is the single source of truth — every store with `lat/lng`, `category`, `status`, `review_count`, `rating`, `district`, `nea_grade`, `bus_stops_400m`, `acra_uen`.
 - **No ORM.** All DB queries use `postgres.js` tagged template SQL via `lib/db.ts`. Cast results: `rows as unknown as MyType[]`.
 - **No Redux/Zustand.** State is React `useState` + `useCallback` + `useEffect` per page.
@@ -69,6 +77,7 @@ Browser (Next.js pages)
 
 API Routes (/pages/api/)
   └─ places.ts              — Spatial bbox query, admin-gated Google refresh
+  └─ places-list.ts         — Paginated category bulk load for map sidebar (replaces old supabase/places)
   └─ hawker-rank.ts         — Hawkers ordered by review_count DESC (+ nea_grade)
   └─ mrt-malls.ts           — Malls within radius of MRT lat/lng (Haversine)
   └─ pitch-stats.ts         — Live counts for investor deck
@@ -91,15 +100,23 @@ PostgreSQL + PostGIS (Docker locally / Cloud SQL in production)
   └─ sg_bus_stops        — LTA bus stops with PostGIS location (foot traffic proxy)
   └─ sg_planning_areas   — 55 planning area polygons (OneMap)
   └─ sg_hdb_prices       — Median resale price by town (income signal)
+  └─ sg_new_businesses   — ACRA newly registered F&B/retail businesses (trend signal)
+  └─ sg_sfa_licenses     — NEA/SFA licensed eating establishments with hygiene grade
+  └─ sg_population       — Resident population by planning area (Census 2020)
   └─ zone_density        — Materialized view: density per district×category
   └─ dead_zone_clusters  — Materialized view: closure cluster signals
+  └─ sg_area_opportunity — View: stores per 1k residents (underserved area signal)
 
 Python ETL (scripts/)
-  └─ fetch/fetch_places.py               — Google Places 3×3 grid scrape per district
+  └─ fetch/fetch_places.py               — Google Places 3×3 grid scrape per district (all 14 categories)
   └─ fetch/fetch_sg_govdata.py           — data.gov.sg: hawker centres + NEA grades
   └─ fetch/fetch_lta_busstops.py         — LTA DataMall: 5K bus stops → bus_stops_400m
   └─ fetch/fetch_onemap_boundaries.py    — OneMap: 55 planning area polygons
   └─ fetch/fetch_acra.py                 — ACRA CSV: business reg/cease dates
+  └─ fetch/fetch_new_businesses.py       — ACRA: newly registered businesses by SSIC category
+  └─ fetch/fetch_sfa_licenses.py         — NEA: 36k+ licensed eating establishments + hygiene grades
+  └─ fetch/fetch_population.py           — SingStat: resident population by planning area
+  └─ fetch/govdata_client.py             — Shared data.gov.sg v2 API client (poll-download pattern)
   └─ preprocess/update_founded_dates.py  — Backfill opening dates
   └─ admin/fetch_closed_businesses.py    — Mark closed via GCIS/ACRA
 ```
@@ -183,12 +200,15 @@ const typed = rows as unknown as MyType[]
 | `pages/michelin.tsx` | Michelin restaurants with tenure timeline + vintage filter + entrance animations |
 | `pages/pitch.tsx` | Investor deck with live stats |
 | `pages/api/places.ts` | Core spatial query + admin Google refresh |
+| `pages/api/places-list.ts` | Paginated category bulk load — `GET ?category=&city=&offset=&limit=` |
 | `db/init_all.sql` | Full schema + seed data (safe to re-run) |
 | `db/sg_enrichment.sql` | SG-specific tables + ALTER TABLE places for NEA/ACRA/bus columns |
+| `db/sg_open_data.sql` | Open data tables: sg_new_businesses, sg_sfa_licenses, sg_population, sg_area_opportunity |
 | `docker-compose.yml` | Local dev: PostGIS DB + Next.js web |
 | `cloudbuild.yaml` | GCP CI/CD: build → GCR → Cloud Run deploy |
 | `docs/GCP_SETUP.md` | Full Cloud SQL + Cloud Run setup runbook |
-| `scripts/fetch/fetch_places.py` | Primary data ingestion pipeline |
+| `scripts/fetch/fetch_places.py` | Primary data ingestion pipeline (all 14 categories) |
+| `scripts/fetch/govdata_client.py` | data.gov.sg v2 API client — poll-download CSV pattern |
 | `components/Navbar.tsx` | Global nav — add new pages here |
 
 ---
